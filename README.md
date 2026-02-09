@@ -34,3 +34,34 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Production Deploy Checklist (Vercel + Supabase)
+
+### 1) Environment Variables (Vercel)
+Set these in Vercel Project Settings → Environment Variables:
+
+```
+DATABASE_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPER_ADMIN_EMAIL=
+```
+
+### 2) Supabase Auth Redirects
+Supabase Dashboard → Authentication → URL Configuration:
+- Site URL: `https://<your-app>.vercel.app`
+- Redirect URLs: `https://<your-app>.vercel.app/*`
+
+### 3) Build Command (Vercel)
+Vercel Project Settings → Build & Development Settings:
+
+```
+npx prisma migrate deploy && npx prisma generate && next build
+```
+
+### 4) Direct DB URL
+Use Supabase **Direct connection** URL for `DATABASE_URL` (with `sslmode=require`).
+
+### 5) First Login
+Sign up with the email you set in `SUPER_ADMIN_EMAIL` to become the initial super admin.

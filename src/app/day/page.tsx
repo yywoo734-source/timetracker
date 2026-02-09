@@ -1,0 +1,1611 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
+const START_OFFSET_MIN = 180; // 03:00
+const MIN_PER_SLOT = 5;
+const SLOTS = 288;
+
+// GRID: 12칸(=1시간) x 24줄(=24시간)
+const COLS = 12;
+const ROWS = 24;
+const CELL = 22;
+const GRID_W = COLS * CELL;
+const GRID_H = ROWS * CELL;
+
+type Category = { id: string; label: string; color: string };
+
+// ✅ 앞으로 기록은 categoryId로 저장 (라벨 변경해도 기록 유지)
+type Block = {
+  id: string;
+  start: number; // 0..1435 (03 기준)
+  dur: number; // 5의 배수
+  categoryId: string;
+};
+
+const CATEGORIES_KEY = "timetracker_categories_v1";
+
+function uuid() {
+  return globalThis.crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}`;
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function labelFromIndex03(idxMin: number) {
+  const realMin = (idxMin + START_OFFSET_MIN) % 1440;
+  const h = Math.floor(realMin / 60);
+  const m = realMin % 60;
+  const isNextDay = idxMin + START_OFFSET_MIN >= 1440;
+  return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}`;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeRange(a: number, b: number) {
+  const s = Math.min(a, b);
+  const e = Math.max(a, b);
+  const start = clamp(Math.round(s / 5) * 5, 0, 1435);
+  const end = clamp(Math.round(e / 5) * 5, 0, 1440);
+  const dur = Math.max(5, end - start);
+  return { start, dur };
+}
+
+function applyBlock(blocks: Block[], incoming: Omit<Block, "id"> & { id?: string }) {
+  const newBlock: Block = { id: incoming.id ?? uuid(), ...incoming };
+
+  const a0 = newBlock.start;
+  const a1 = newBlock.start + newBlock.dur;
+
+  const next: Block[] = [];
+  for (const b of blocks) {
+    const b0 = b.start;
+    const b1 = b.start + b.dur;
+
+    if (b1 <= a0 || a1 <= b0) {
+      next.push(b);
+      continue;
+    }
+
+    if (b0 < a0)
+      next.push({
+        ...b,
+        id: uuid(),
+        dur: a0 - b0,
+      });
+    if (a1 < b1)
+      next.push({
+        ...b,
+        id: uuid(),
+        start: a1,
+        dur: b1 - a1,
+      });
+  }
+
+  next.push(newBlock);
+  next.sort((x, y) => x.start - y.start);
+
+  // 같은 카테고리면 붙여서 merge
+  const merged: Block[] = [];
+  for (const b of next) {
+    const last = merged[merged.length - 1];
+    if (last && last.categoryId === b.categoryId && last.start + last.dur === b.start) {
+      last.dur += b.dur;
+    } else {
+      merged.push({ ...b });
+    }
+  }
+
+  return merged.filter((b) => b.dur >= 5);
+}
+
+function snapIndexFromPoint(clientY: number, clientX: number, top: number, left: number) {
+  const y = clientY - top;
+  const x = clientX - left;
+
+  const col = clamp(Math.round(x / CELL), 0, COLS);
+  const row = clamp(Math.round(y / CELL), 0, ROWS);
+
+  const slot = row * COLS + col; // 0..288
+  const clampedSlot = clamp(slot, 0, SLOTS);
+  return clampedSlot * MIN_PER_SLOT;
+}
+
+function timeLabelForRow(row: number) {
+  const idxMin = row * 60;
+  return labelFromIndex03(idxMin);
+}
+
+function loadCategories(): Category[] {
+  const raw = localStorage.getItem(CATEGORIES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Category[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c) => c?.id && c?.label && c?.color);
+  } catch {
+    return [];
+  }
+}
+
+function addDays(isoDate: string, diff: number) {
+  const d = new Date(isoDate);
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoDayKey03(date = new Date()) {
+  const d = new Date(date);
+  // 03:00 기준으로 하루를 끊기 위해 3시간을 빼서 날짜 키를 만든다
+  d.setHours(d.getHours() - 3);
+  return d.toISOString().slice(0, 10);
+}
+
+type DayRecord = { blocks: Block[]; notesByCategory: Record<string, string> };
+
+const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {} };
+
+function fmtDayLabel(isoDate: string) {
+  // MM/DD
+  return `${isoDate.slice(5, 7)}/${isoDate.slice(8, 10)}`;
+}
+
+export default function DayPage() {
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef<number | null>(null);
+  const isErasingRef = useRef(false);
+  const router = useRouter();
+  const [authReady, setAuthReady] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [recordsByDay, setRecordsByDay] = useState<Record<string, DayRecord>>({});
+
+  // ✅ Step 1: 03시 기준 날짜
+  const [day, setDay] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() - 3);
+    return d.toISOString().slice(0, 10);
+  });
+
+  // ✅ categories는 setup에서 로드
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [activeCategoryId, setActiveCategoryId] = useState<string>("");
+
+  // ✅ 날짜별 기록
+  const [actualBlocks, setActualBlocks] = useState<Block[]>([]);
+  // ✅ 과목별 한 줄 메모 (최대 50자)
+  const [notesByCategory, setNotesByCategory] = useState<Record<string, string>>({});
+  const [showNotes, setShowNotes] = useState<boolean>(true);
+  const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  // ✅ Undo용 히스토리
+  const [history, setHistory] = useState<Block[][]>([]);
+  const [future, setFuture] = useState<Block[][]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAuth() {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data } = await supabase.auth.getUser();
+        if (!data.user) {
+          router.replace("/login");
+          return;
+        }
+
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token;
+        setAccessToken(token ?? null);
+        const res = await fetch("/api/me", {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (res.ok) {
+          const body = await res.json();
+          if (body.user?.status !== "APPROVED") {
+            router.replace("/pending");
+            return;
+          }
+        }
+
+        if (!cancelled) setAuthReady(true);
+      } catch {
+        if (!cancelled) router.replace("/login");
+      }
+    }
+
+    checkAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  const clearAllRecords = useCallback(() => {
+    if (!confirm("모든 날짜의 기록을 정말 삭제할까?")) return;
+    setActualBlocks([]);
+    setNotesByCategory({});
+    setHistory([]);
+    setFuture([]);
+    alert("모든 기록이 삭제됐어요");
+  }, []);
+
+  const isToday = day === isoDayKey03();
+
+  // 현재 시간 (03 기준)
+  const [nowMin, setNowMin] = useState<number | null>(null);
+
+  const nowPos = useMemo(() => {
+    if (nowMin == null) return null;
+    const slot = Math.floor(nowMin / MIN_PER_SLOT);
+    const row = Math.floor(slot / COLS);
+    const col = slot % COLS;
+    return { top: row * CELL, left: col * CELL };
+  }, [nowMin]);
+
+  const nowRow = useMemo(() => {
+    if (nowMin == null) return null;
+    const slot = Math.floor(nowMin / MIN_PER_SLOT);
+    return Math.floor(slot / COLS);
+  }, [nowMin]);
+
+  // ✅ 1분마다 현재시간 갱신
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const mins = now.getHours() * 60 + now.getMinutes();
+      const idx = (mins - START_OFFSET_MIN + 1440) % 1440;
+      setNowMin(idx);
+    };
+    tick();
+    const id = setInterval(tick, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ✅ 카테고리 로드
+  useEffect(() => {
+    const loaded = loadCategories();
+    setCategories(loaded);
+    if (loaded.length > 0) setActiveCategoryId(loaded[0].id);
+  }, []);
+  // Undo/Redo 안정성: refs + stable callbacks
+  const actualBlocksRef = useRef<Block[]>([]);
+  useEffect(() => {
+    actualBlocksRef.current = actualBlocks;
+  }, [actualBlocks]);
+
+  const pushHistory = useCallback((snapshot: Block[]) => {
+    setHistory((prev) => {
+      const next = [...prev, snapshot];
+      if (next.length > 50) next.shift();
+      return next;
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+
+      const last = prev[prev.length - 1];
+      setFuture((f) => [structuredClone(actualBlocksRef.current), ...f]);
+      setActualBlocks(last);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setFuture((prev) => {
+      if (prev.length === 0) return prev;
+
+      const next = prev[0];
+      setHistory((h) => [...h, structuredClone(actualBlocksRef.current)]);
+      setActualBlocks(next);
+      return prev.slice(1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toLowerCase().includes("mac");
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modifier && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+
+      if (
+        modifier &&
+        (e.key.toLowerCase() === "y" ||
+          (e.key.toLowerCase() === "z" && e.shiftKey))
+      ) {
+        e.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
+
+  // ✅ 날짜 이동
+  function moveDay(diff: number) {
+    const d = new Date(day);
+    d.setDate(d.getDate() + diff);
+    setDay(d.toISOString().slice(0, 10));
+  }
+
+  // ✅ 날짜별 기록 불러오기
+  useEffect(() => {
+    const rec = recordsByDay[day];
+    if (!rec) return;
+    setActualBlocks(rec.blocks);
+    setNotesByCategory(rec.notesByCategory ?? {});
+    setSaveStatus("saved");
+  }, [day, recordsByDay]);
+
+  // ✅ 날짜별 기록 저장
+  useEffect(() => {
+    if (!accessToken) return;
+    setSaveStatus("saving");
+    const t = window.setTimeout(async () => {
+      const res = await fetch("/api/records", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          day,
+          blocks: actualBlocks,
+          notesByCategory,
+          categories,
+        }),
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+        setRecordsByDay((prev) => ({
+          ...prev,
+          [day]: { blocks: actualBlocks, notesByCategory },
+        }));
+      } else {
+        setSaveStatus("saved");
+      }
+    }, 200);
+
+    return () => window.clearTimeout(t);
+  }, [accessToken, actualBlocks, notesByCategory, day]);
+  // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
+  useEffect(() => {
+    setNotesByCategory((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const c of categories) {
+        if (typeof next[c.id] !== "string") next[c.id] = "";
+      }
+      return next;
+    });
+  }, [categories]);
+
+  // ✅ 최근 N일 변화 추이(7/14/30) + 범례 토글 + hover 툴팁
+  const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
+  const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
+  const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const trendDates = useMemo(() => {
+    // 현재 보고 있는 day를 기준으로 과거 (trendDays-1)일 + 오늘(총 trendDays)
+    return Array.from({ length: trendDays }).map((_, i) => addDays(day, i - (trendDays - 1)));
+  }, [day, trendDays]);
+
+  // ✅ 선택 범위
+  const [dragStart, setDragStart] = useState<number | null>(null);
+  const [dragEnd, setDragEnd] = useState<number | null>(null);
+
+  const selection = useMemo(() => {
+    if (dragStart == null || dragEnd == null) return null;
+    return normalizeRange(dragStart, dragEnd);
+  }, [dragStart, dragEnd]);
+
+  // ✅ filled(격자 칸 색)
+  const colorById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of categories) map[c.id] = c.color;
+    return map;
+  }, [categories]);
+
+  const filled = useMemo(() => {
+    const arr = Array<string | null>(SLOTS).fill(null);
+    for (const b of actualBlocks) {
+      const s = Math.floor(b.start / 5);
+      const e = Math.floor((b.start + b.dur) / 5);
+      const color = colorById[b.categoryId] ?? "#111827";
+      for (let i = s; i < e && i < SLOTS; i++) arr[i] = color;
+    }
+    return arr;
+  }, [actualBlocks, colorById]);
+
+  const selSlots = useMemo(() => {
+    if (!selection) return null;
+    const s = Math.floor(selection.start / 5);
+    const e = Math.floor((selection.start + selection.dur) / 5);
+    return { s, e };
+  }, [selection]);
+
+  function fmtMin(min: number) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  }
+
+  // ✅ 요약(카테고리별)
+  const summary = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const c of categories) totals[c.id] = 0;
+    for (const b of actualBlocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+    const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
+    return { totals, totalMin };
+  }, [actualBlocks, categories]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    async function loadDays() {
+      const headers = { Authorization: `Bearer ${accessToken}` };
+      const results = await Promise.all(
+        trendDates.map(async (d) => {
+          const res = await fetch(`/api/records?day=${d}`, { headers });
+          if (!res.ok) return [d, EMPTY_RECORD] as const;
+          const body = await res.json();
+          const record = body.record
+            ? {
+                blocks: (body.record.blocks as Block[]) ?? [],
+                notesByCategory: (body.record.notes as Record<string, string>) ?? {},
+              }
+            : EMPTY_RECORD;
+          return [d, record] as const;
+        })
+      );
+
+      if (!cancelled) {
+        setRecordsByDay((prev) => {
+          const next = { ...prev };
+          for (const [d, record] of results) next[d] = record;
+          return next;
+        });
+      }
+    }
+
+    loadDays();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, trendDates]);
+
+  const trend = useMemo(() => {
+    const totalsByDay: Array<{ day: string; totals: Record<string, number>; totalMin: number }> = [];
+
+    for (const d of trendDates) {
+      const blocks = recordsByDay[d]?.blocks ?? [];
+      const totals: Record<string, number> = {};
+      for (const c of categories) totals[c.id] = 0;
+
+      for (const b of blocks) {
+        totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+      }
+
+      const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
+      totalsByDay.push({ day: d, totals, totalMin });
+    }
+
+    // ✅ 표시중(숨김 제외) 카테고리 기준으로 yMax 계산
+    const visibleCategories = categories.filter((c) => !hiddenCategoryIds[c.id]);
+    const catsForScale = visibleCategories.length ? visibleCategories : categories;
+
+    const yCandidates = totalsByDay.flatMap((x) => catsForScale.map((c) => x.totals[c.id] ?? 0));
+    if (!hiddenTotal) {
+      for (const x of totalsByDay) yCandidates.push(x.totalMin);
+    }
+
+    const maxY = Math.max(1, ...yCandidates);
+    return { totalsByDay, maxY };
+  }, [trendDates, categories, hiddenCategoryIds, hiddenTotal]);
+
+  function toggleCategoryVisible(id: string) {
+    setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+  function removeBlockAt(min: number) {
+    setActualBlocks((prev) => {
+      pushHistory(structuredClone(prev));
+      setFuture([]);
+
+      const next: Block[] = [];
+
+      for (const b of prev) {
+        const bStart = b.start;
+        const bEnd = b.start + b.dur;
+
+        // 클릭한 칸이 이 블록과 무관
+        if (min < bStart || min >= bEnd) {
+          next.push(b);
+          continue;
+        }
+
+        // 🔥 앞쪽 남는 블록
+        if (bStart < min) {
+          next.push({
+            ...b,
+            id: uuid(),
+            dur: min - bStart,
+          });
+        }
+
+        // 🔥 뒤쪽 남는 블록
+        const afterStart = min + 5;
+        if (afterStart < bEnd) {
+          next.push({
+            ...b,
+            id: uuid(),
+            start: afterStart,
+            dur: bEnd - afterStart,
+          });
+        }
+      }
+
+      return next;
+    });
+  }
+  function removeSelectionRange(start: number, dur: number) {
+    const delStart = start;
+    const delEnd = start + dur;
+
+    setActualBlocks((prev) => {
+      pushHistory(structuredClone(prev));
+      setFuture([]);
+
+      const next: Block[] = [];
+
+      for (const b of prev) {
+        const bStart = b.start;
+        const bEnd = b.start + b.dur;
+
+        // 1) 겹치지 않으면 그대로 유지
+        if (bEnd <= delStart || delEnd <= bStart) {
+          next.push(b);
+          continue;
+        }
+
+        // 2) 삭제 범위 앞쪽이 남으면 잘라서 유지
+        if (bStart < delStart) {
+          next.push({
+            ...b,
+            id: uuid(),
+            dur: delStart - bStart,
+          });
+        }
+
+        // 3) 삭제 범위 뒤쪽이 남으면 잘라서 유지
+        if (delEnd < bEnd) {
+          next.push({
+            ...b,
+            id: uuid(),
+            start: delEnd,
+            dur: bEnd - delEnd,
+          });
+        }
+      }
+
+      next.sort((a, b) => a.start - b.start);
+      return next.filter((b) => b.dur >= 5);
+    });
+  }
+  function commitSelection() {
+    if (!selection) return;
+
+    // ✅ 지우개 모드: 드래그한 범위를 삭제
+    // (removeSelectionRange 내부에서 history 저장 + redo 초기화를 이미 처리함)
+    if (isErasingRef.current) {
+      removeSelectionRange(selection.start, selection.dur);
+
+      setDragStart(null);
+      setDragEnd(null);
+      isErasingRef.current = false;
+      return;
+    }
+
+    // ✅ 그리기 모드
+    if (!activeCategoryId) return;
+
+    // ✅ 1️⃣ 변경 "직전" 상태를 history에 저장
+    pushHistory(structuredClone(actualBlocks));
+    setFuture([]); // 새 작업 시작 시 redo 기록 초기화
+
+    // ✅ 2️⃣ 실제 변경
+    setActualBlocks((prev) =>
+      applyBlock(prev, {
+        start: selection.start,
+        dur: selection.dur,
+        categoryId: activeCategoryId,
+      })
+    );
+
+    setDragStart(null);
+    setDragEnd(null);
+    // 항상 모드 리셋되게 해
+    isErasingRef.current = false;
+  }
+
+  if (!authReady) {
+    return (
+      <div style={{ maxWidth: 520, margin: "64px auto", padding: 24 }}>
+        로딩 중...
+      </div>
+    );
+  }
+
+  // ✅ 카테고리 없으면 setup으로 안내
+  if (categories.length === 0) {
+    return (
+      <div style={{ padding: 24, fontFamily: "system-ui" }}>
+        <h1 style={{ margin: 0 }}>TimeTracker</h1>
+        <p style={{ marginTop: 8, opacity: 0.75 }}>
+          먼저 항목(카테고리)과 색을 설정해야 해.
+        </p>
+        <button
+          onClick={() => router.push("/setup")}
+          style={{
+            marginTop: 10,
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#111827",
+            color: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          설정하러 가기
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 24, fontFamily: "system-ui", maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <h1 style={{ margin: 0 }}>TimeTracker</h1>
+        <button
+          onClick={clearAllRecords}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: "1px solid #fca5a5",
+            background: "#fff",
+            color: "#b91c1c",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          기록 전체 삭제
+        </button>
+        <div
+          style={{
+            marginLeft: "auto",
+            fontSize: 12,
+            opacity: 0.75,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: saveStatus === "saving" ? "#f59e0b" : "#22c55e",
+              display: "inline-block",
+            }}
+          />
+          {saveStatus === "saving" ? "저장 중…" : "저장됨"}
+        </div>
+        <button
+          onClick={() => router.push("/setup")}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#fff",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          설정
+        </button>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+        <button onClick={() => moveDay(-1)}>◀</button>
+        <strong>{day}</strong>
+        <button onClick={() => moveDay(1)}>▶</button>
+      </div>
+
+      <p style={{ marginTop: 6, opacity: 0.7 }}>03:00 ~ 다음날 03:00</p>
+
+      {/* 요약 */}
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #eee",
+          borderRadius: 12,
+          background: "#fafafa",
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>합계: {fmtMin(summary.totalMin)}</div>
+        {categories.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "white",
+              border: "1px solid #eee",
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                background: c.color,
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontSize: 13 }}>
+              {c.label}: {fmtMin(summary.totals[c.id] ?? 0)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 카테고리 버튼 */}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => setActiveCategoryId(cat.id)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid #ddd",
+              background: activeCategoryId === cat.id ? cat.color : "#fff",
+              color: activeCategoryId === cat.id ? "#fff" : "#333",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, fontSize: 13, opacity: 0.7 }}>
+        격자에서 드래그해서 5분 칸 단위로 체크해봐
+      </div>
+
+      {/* 분 가늠용 헤더 */}
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8 }}>
+        <div style={{ width: 80 }} />
+        <div
+          style={{
+            width: GRID_W,
+            display: "grid",
+            gridTemplateColumns: `repeat(${COLS}, ${CELL}px)`,
+            fontSize: 11,
+            opacity: 0.6,
+            marginBottom: 4,
+          }}
+        >
+          {Array.from({ length: COLS }).map((_, i) => (
+            <div key={i} style={{ textAlign: "center" }}>
+              {(i + 1) * 5 % 60 === 0 ? 60 : (i + 1) * 5}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* LEFT + RIGHT: 타임트래커 / 그래프 */}
+      <div style={{ marginTop: 8, display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {/* LEFT: 시간 라벨 + 격자 + (아래) 오늘 기록 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* 시간 라벨 + 격자 */}
+          <div style={{ display: "flex", gap: 12 }}>
+            {/* 시간 라벨 */}
+            <div style={{ width: 80, fontSize: 11, opacity: 0.65 }}>
+              <div style={{ height: 8 }} />
+              {Array.from({ length: ROWS }).map((_, r) => {
+                const active = nowRow === r;
+                return (
+                  <div
+                    key={r}
+                    style={{
+                      height: CELL,
+                      display: "flex",
+                      alignItems: "center",
+                      fontWeight: isToday && active ? 700 : 400,
+                      color: isToday && active ? "#ef4444" : "inherit",
+                      opacity: active ? 1 : 0.65,
+                    }}
+                  >
+                    {timeLabelForRow(r)}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 격자 */}
+            <div
+              style={{
+                width: GRID_W,
+                height: GRID_H,
+                border: "1px solid #ddd",
+                position: "relative",
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "#fff",
+                userSelect: "none",
+                touchAction: "none",
+              }}
+              onMouseDown={(e) => {
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const idx = snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left);
+
+                const slotIndex = Math.floor(idx / 5);
+                isErasingRef.current = !!filled[slotIndex];
+
+                isDraggingRef.current = false;
+                dragStartRef.current = idx;
+
+                setDragStart(idx);
+                setDragEnd(idx);
+              }}
+              onMouseMove={(e) => {
+                if (dragStartRef.current == null) return;
+
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const idx = snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left);
+
+                if (Math.abs(idx - dragStartRef.current) >= 5) isDraggingRef.current = true;
+                setDragEnd(idx);
+              }}
+              onMouseUp={() => {
+                if (isDraggingRef.current) {
+                  commitSelection();
+                } else {
+                  setDragStart(null);
+                  setDragEnd(null);
+                  isErasingRef.current = false;
+                }
+
+                dragStartRef.current = null;
+                setTimeout(() => {
+                  isDraggingRef.current = false;
+                }, 0);
+              }}
+              onMouseLeave={() => {
+                if (dragStartRef.current != null && isDraggingRef.current) {
+                  commitSelection();
+                }
+
+                dragStartRef.current = null;
+                isDraggingRef.current = false;
+                isErasingRef.current = false;
+              }}
+              onTouchStart={(e) => {
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const t = e.touches[0];
+                const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
+
+                const slotIndex = Math.floor(idx / 5);
+                isErasingRef.current = !!filled[slotIndex];
+
+                isDraggingRef.current = false;
+                dragStartRef.current = idx;
+
+                setDragStart(idx);
+                setDragEnd(idx);
+              }}
+              onTouchMove={(e) => {
+                if (dragStartRef.current == null) return;
+
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const t = e.touches[0];
+                const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
+
+                if (Math.abs(idx - dragStartRef.current) >= 5) isDraggingRef.current = true;
+                setDragEnd(idx);
+              }}
+              onTouchEnd={() => {
+                if (isDraggingRef.current) {
+                  commitSelection();
+                } else {
+                  setDragStart(null);
+                  setDragEnd(null);
+                  isErasingRef.current = false;
+                }
+
+                dragStartRef.current = null;
+                isDraggingRef.current = false;
+              }}
+            >
+              {/* 오늘만 현재 표시 */}
+              {isToday && nowPos && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: nowPos.top,
+                    left: 0,
+                    width: GRID_W,
+                    height: CELL,
+                    background: "rgba(239,68,68,0.12)",
+                    borderTop: "1px solid rgba(239,68,68,0.45)",
+                    borderBottom: "1px solid rgba(239,68,68,0.45)",
+                    pointerEvents: "none",
+                    zIndex: 6,
+                  }}
+                />
+              )}
+
+              {isToday && nowPos && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: nowPos.top,
+                    left: nowPos.left,
+                    width: CELL,
+                    height: CELL,
+                    pointerEvents: "none",
+                    zIndex: 7,
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: "#ef4444",
+                      boxShadow: "0 0 0 3px rgba(239,68,68,0.18)",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${COLS}, ${CELL}px)`,
+                  gridTemplateRows: `repeat(${ROWS}, ${CELL}px)`,
+                }}
+              >
+                {filled.map((v, i) => {
+                  const isSelected = selSlots ? i >= selSlots.s && i < selSlots.e : false;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        width: CELL,
+                        height: CELL,
+                        boxSizing: "border-box",
+                        borderRight: "1px solid #eee",
+                        borderBottom: "1px solid #eee",
+                        background: isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent",
+                      }}
+                      title={labelFromIndex03(i * 5)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+
+                        if (isDraggingRef.current) {
+                          isErasingRef.current = false;
+                          return;
+                        }
+
+                        if (selection) {
+                          removeSelectionRange(selection.start, selection.dur);
+                          setDragStart(null);
+                          setDragEnd(null);
+
+                          dragStartRef.current = null;
+                          isDraggingRef.current = false;
+                          return;
+                        }
+
+                        if (v) removeBlockAt(i * 5);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 아래 카드: 오늘 기록 리스트 */}
+          <div
+            style={{
+              width: 80 + 12 + GRID_W,
+              border: "1px solid #eee",
+              borderRadius: 14,
+              background: "#fff",
+              padding: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>오늘 기록</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>총 {fmtMin(summary.totalMin)}</div>
+            </div>
+
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {categories
+                .slice()
+                .sort((a, b) => (summary.totals[b.id] ?? 0) - (summary.totals[a.id] ?? 0))
+                .slice(0, 6)
+                .map((c) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #eee",
+                      background: "#fafafa",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 999,
+                        background: c.color,
+                        display: "inline-block",
+                      }}
+                    />
+                    <span style={{ fontWeight: 700 }}>{c.label}</span>
+                    <span style={{ opacity: 0.7 }}>{fmtMin(summary.totals[c.id] ?? 0)}</span>
+                  </div>
+                ))}
+            </div>
+
+            {/* 한 줄 메모 */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ fontWeight: 800, fontSize: 13 }}>과목별 한 줄 메모</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    onClick={() => setShowAllNotes((v) => !v)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #e5e7eb",
+                      background: showAllNotes ? "#111827" : "#fff",
+                      color: showAllNotes ? "#fff" : "#111827",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    {showAllNotes ? "전체보기" : "오늘 한 과목만"}
+                  </button>
+
+                  <button
+                    onClick={() => setShowNotes((v) => !v)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    {showNotes ? "접기" : "펼치기"}
+                  </button>
+                </div>
+              </div>
+
+              {showNotes && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(showAllNotes ? categories : categories.filter((c) => (summary.totals[c.id] ?? 0) > 0)).map((c) => (
+                    <div
+                      key={c.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ width: 120, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 999,
+                            background: c.color,
+                            display: "inline-block",
+                          }}
+                        />
+                        <span style={{ fontSize: 12, fontWeight: 800 }}>{c.label}</span>
+                      </div>
+
+                      <input
+                        value={(notesByCategory[c.id] ?? "").slice(0, 50)}
+                        maxLength={50}
+                        placeholder="예: 22번 오답 / 단어 40개"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setNotesByCategory((prev) => ({ ...prev, [c.id]: v }));
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: 180,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "1px solid #e5e7eb",
+                          fontSize: 12,
+                          outline: "none",
+                        }}
+                      />
+
+                      <div style={{ width: 52, textAlign: "right", fontSize: 11, opacity: 0.55 }}>
+                        {(notesByCategory[c.id] ?? "").length}/50
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: "1px solid #f3f4f6",
+                paddingTop: 10,
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
+              {actualBlocks.length === 0 ? (
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  아직 기록이 없어. 격자에서 드래그로 입력해봐.
+                </div>
+              ) : (
+                actualBlocks
+                  .slice()
+                  .sort((a, b) => a.start - b.start)
+                  .map((b) => {
+                    const cat = categories.find((c) => c.id === b.categoryId);
+                    const start = labelFromIndex03(b.start);
+                    const end = labelFromIndex03(b.start + b.dur);
+                    return (
+                      <div
+                        key={b.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "8px 6px",
+                          borderRadius: 10,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 999,
+                              background: cat?.color ?? "#111827",
+                              display: "inline-block",
+                            }}
+                          />
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "#111827" }}>
+                              {cat?.label ?? "(알 수 없음)"}
+                            </div>
+                            <div style={{ fontSize: 12, opacity: 0.7 }}>
+                              {start} ~ {end}
+                            </div>
+                            {(() => {
+                              const note = (notesByCategory[b.categoryId] ?? "").trim();
+                              if (!note) return null;
+                              return (
+                                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                  <span style={{ fontWeight: 800, opacity: 0.9 }}>메모:</span> {note}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtMin(b.dur)}</div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: 그래프 영역 */}
+        <div
+          style={{
+            flex: 1,
+            minWidth: 360,
+            maxWidth: 560,
+            display: "flex",
+            flexDirection: "column",
+            gap: 24,
+            position: "sticky",
+            top: 24,
+            alignSelf: "flex-start",
+          }}
+        >
+
+
+          {/* =======================
+              A. 총 공부시간 추이
+             ======================= */}
+          <div
+            style={{
+              border: "1px solid #eee",
+              borderRadius: 14,
+              background: "#fff",
+              padding: 16,
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 16 }}>총 공부시간 추이</div>
+
+            {/* 기간 선택 */}
+            <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+              {[7, 14, 30].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setTrendDays(d as 7 | 14 | 30)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #ddd",
+                    background: trendDays === d ? "#111827" : "#fff",
+                    color: trendDays === d ? "#fff" : "#111827",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  {d}일
+                </button>
+              ))}
+            </div>
+
+            {(() => {
+              const W = 760;
+              const H = 320;
+              const padL = 50;
+              const padR = 20;
+              const padT = 20;
+              const padB = 40;
+              const innerW = W - padL - padR;
+              const innerH = H - padT - padB;
+
+              const days = trend.totalsByDay;
+              const n = days.length;
+              const yMax = Math.max(1, ...days.map((d) => d.totalMin));
+
+              const xStep = n <= 1 ? 0 : innerW / (n - 1);
+              const xAt = (i: number) => padL + i * xStep;
+              const y = (v: number) => padT + innerH - (v / yMax) * innerH;
+
+              const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
+
+              return (
+                <svg
+                  width={W}
+                  height={H}
+                  style={{ marginTop: 16 }}
+                  onMouseLeave={() => setHoverIndex(null)}
+                  onMouseMove={(e) => {
+                    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    if (mx < padL || mx > W - padR) return;
+
+                    const idx = Math.round((mx - padL) / (xStep || 1));
+                    setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                  }}
+                >
+                  {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
+                    const v = yMax * p;
+                    const yy = y(v);
+                    return (
+                      <g key={i}>
+                        <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke="#f3f4f6" />
+                        <text x={10} y={yy + 4} fontSize={11} fill="#6b7280">
+                          {fmtMin(Math.round(v))}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  <polyline points={points} fill="none" stroke="#111827" strokeWidth={3} />
+
+                  {days.map((d, i) => (
+                    <circle key={i} cx={xAt(i)} cy={y(d.totalMin)} r={4} fill="#111827" />
+                  ))}
+
+                  {hoverIndex != null && (
+                    <line
+                      x1={xAt(hoverIndex)}
+                      x2={xAt(hoverIndex)}
+                      y1={padT}
+                      y2={H - padB}
+                      stroke="#cbd5e1"
+                      strokeDasharray="4 4"
+                    />
+                  )}
+                </svg>
+              );
+            })()}
+          </div>
+
+          {/* =======================
+              B. 과목별 공부시간 추이
+             ======================= */}
+          <div
+            style={{
+              border: "1px solid #eee",
+              borderRadius: 14,
+              background: "#fff",
+              padding: 16,
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 16 }}>과목별 공부시간 추이</div>
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+              아래 범례를 클릭하면 과목별 라인을 숨기거나 다시 볼 수 있어
+            </div>
+
+            {(() => {
+              const W = 760;
+              const H = 360;
+              const padL = 50;
+              const padR = 20;
+              const padT = 20;
+              const padB = 44;
+              const innerW = W - padL - padR;
+              const innerH = H - padT - padB;
+
+              const days = trend.totalsByDay;
+              const n = days.length;
+
+              const visibleCats = categories.filter((c) => !hiddenCategoryIds[c.id]);
+              const catsForScale = visibleCats.length ? visibleCats : categories;
+              const yCandidates = days.flatMap((d) => catsForScale.map((c) => d.totals[c.id] ?? 0));
+              const yMax = Math.max(1, ...yCandidates);
+
+              const xStep = n <= 1 ? 0 : innerW / (n - 1);
+              const xAt = (i: number) => padL + i * xStep;
+              const y = (v: number) => padT + innerH - (v / yMax) * innerH;
+
+              const tooltip =
+                hoverIndex == null
+                  ? null
+                  : {
+                      day: days[hoverIndex]?.day,
+                      totals: days[hoverIndex]?.totals ?? {},
+                      x: xAt(hoverIndex),
+                    };
+
+              const tooltipLeft = tooltip ? clamp(tooltip.x - 120, 8, W - 240) : 0;
+
+              return (
+                <div style={{ marginTop: 14, position: "relative" }}>
+                  {/* 범례(카테고리 칩) */}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    {categories.map((c) => {
+                      const hidden = !!hiddenCategoryIds[c.id];
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => toggleCategoryVisible(c.id)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 10px",
+                            borderRadius: 999,
+                            border: "1px solid #e5e7eb",
+                            background: hidden ? "#fff" : "#111827",
+                            color: hidden ? "#111827" : "#fff",
+                            cursor: "pointer",
+                            fontSize: 12,
+                          }}
+                          title={hidden ? "표시" : "숨김"}
+                        >
+                          <span
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 999,
+                              background: c.color,
+                              display: "inline-block",
+                              opacity: hidden ? 0.35 : 1,
+                            }}
+                          />
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <svg
+                    width={W}
+                    height={H}
+                    onMouseLeave={() => setHoverIndex(null)}
+                    onMouseMove={(e) => {
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const mx = e.clientX - rect.left;
+                      if (mx < padL || mx > W - padR) return;
+
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
+                    style={{ display: "block" }}
+                  >
+                    {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
+                      const v = yMax * p;
+                      const yy = y(v);
+                      return (
+                        <g key={i}>
+                          <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke="#f3f4f6" />
+                          <text x={10} y={yy + 4} fontSize={11} fill="#6b7280">
+                            {fmtMin(Math.round(v))}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {days.map((d, i) => {
+                      const show = n <= 7 ? true : i === 0 || i === n - 1 || i % 2 === 0;
+                      if (!show) return null;
+                      return (
+                        <text
+                          key={d.day}
+                          x={xAt(i)}
+                          y={H - 16}
+                          fontSize={11}
+                          fill="#6b7280"
+                          textAnchor="middle"
+                        >
+                          {fmtDayLabel(d.day)}
+                        </text>
+                      );
+                    })}
+
+                    {categories
+                      .filter((c) => !hiddenCategoryIds[c.id])
+                      .map((c) => {
+                        const pts = days
+                          .map((d, i) => {
+                            const v = d.totals[c.id] ?? 0;
+                            return `${xAt(i)},${y(v)}`;
+                          })
+                          .join(" ");
+
+                        return (
+                          <polyline
+                            key={c.id}
+                            points={pts}
+                            fill="none"
+                            stroke={c.color}
+                            strokeWidth={3}
+                          />
+                        );
+                      })}
+
+                    {hoverIndex != null && (
+                      <g>
+                        <line
+                          x1={xAt(hoverIndex)}
+                          x2={xAt(hoverIndex)}
+                          y1={padT}
+                          y2={H - padB}
+                          stroke="#cbd5e1"
+                          strokeDasharray="4 4"
+                        />
+                        {categories
+                          .filter((c) => !hiddenCategoryIds[c.id])
+                          .map((c) => {
+                            const v = days[hoverIndex]?.totals[c.id] ?? 0;
+                            return (
+                              <circle
+                                key={c.id}
+                                cx={xAt(hoverIndex)}
+                                cy={y(v)}
+                                r={4}
+                                fill={c.color}
+                              />
+                            );
+                          })}
+                      </g>
+                    )}
+                  </svg>
+
+                  {tooltip && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        left: tooltipLeft,
+                        width: 240,
+                        border: "1px solid #e5e7eb",
+                        background: "rgba(255,255,255,0.98)",
+                        borderRadius: 12,
+                        padding: 10,
+                        boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 8 }}>
+                        {fmtDayLabel(tooltip.day)}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {categories.map((c) => {
+                          const hidden = !!hiddenCategoryIds[c.id];
+                          const v = tooltip.totals[c.id] ?? 0;
+                          return (
+                            <div
+                              key={c.id}
+                              style={{
+                                display: hidden ? "none" : "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span
+                                  style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: 999,
+                                    background: c.color,
+                                    display: "inline-block",
+                                  }}
+                                />
+                                <span style={{ color: "#111827" }}>{c.label}</span>
+                              </div>
+                              <span style={{ color: "#111827", fontWeight: 700 }}>{fmtMin(v)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+} 
