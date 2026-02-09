@@ -13,7 +13,7 @@ type User = {
 };
 
 type RecordPayload = {
-  blocks?: Array<{ start: number; dur: number; categoryId: string }>;
+  blocks?: Array<{ id?: string; start: number; dur: number; categoryId: string }>;
   notes?: Record<string, string>;
   categories?: Array<{ id: string; label: string; color: string }>;
 };
