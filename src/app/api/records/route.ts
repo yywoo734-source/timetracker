@@ -57,14 +57,14 @@ export async function POST(request: NextRequest) {
     update: {
       blocks: body.blocks ?? [],
       notes: body.notesByCategory ?? {},
-      categories: body.categories ?? null,
+      categories: body.categories ?? {},
     },
     create: {
       userId: user.id,
       day: dayToDate(body.day),
       blocks: body.blocks ?? [],
       notes: body.notesByCategory ?? {},
-      categories: body.categories ?? null,
+      categories: body.categories ?? {},
     },
   });
 
