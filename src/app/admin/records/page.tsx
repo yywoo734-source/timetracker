@@ -255,7 +255,7 @@ export default function AdminRecordsPage() {
                       </thead>
                       <tbody>
                         {blocks.map((b) => (
-                          <tr key={b.id}>
+                          <tr key={`${b.categoryId}-${b.start}-${b.dur}`}>
                             <td style={{ padding: "6px", borderBottom: "1px solid #f1f1f1" }}>
                               {labelFromIndex03(b.start)}
                             </td>
