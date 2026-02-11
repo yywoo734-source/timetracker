@@ -721,7 +721,7 @@ export default function DayPage() {
       style={{
         padding: isNarrow ? 12 : 24,
         fontFamily: "system-ui",
-        maxWidth: 1200,
+        maxWidth: "100%",
         margin: "0 auto",
       }}
     >
@@ -1323,7 +1323,7 @@ export default function DayPage() {
           style={{
             flex: isNarrow ? "1 1 auto" : "1 1 520px",
             minWidth: isNarrow ? 0 : 360,
-            maxWidth: isNarrow ? "100%" : 560,
+            maxWidth: "100%",
             width: "100%",
             display: "flex",
             flexDirection: "column",
@@ -1370,7 +1370,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 520;
+              const W = isNarrow ? 760 : 760;
               const H = 320;
               const padL = 50;
               const padR = 20;
@@ -1457,7 +1457,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 520;
+              const W = isNarrow ? 760 : 760;
               const H = 360;
               const padL = 50;
               const padR = 20;
