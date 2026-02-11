@@ -1224,7 +1224,21 @@ export default function DayPage() {
                           return;
                         }
 
-                        if (v) removeBlockAt(i * 5);
+                        if (v) {
+                          removeBlockAt(i * 5);
+                          return;
+                        }
+
+                        if (!activeCategoryId) return;
+                        pushHistory(structuredClone(actualBlocksRef.current));
+                        setFuture([]);
+                        setActualBlocks((prev) =>
+                          applyBlock(prev, {
+                            start: i * 5,
+                            dur: 5,
+                            categoryId: activeCategoryId,
+                          })
+                        );
                       }}
                     />
                   );
