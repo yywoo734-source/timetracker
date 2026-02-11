@@ -294,7 +294,8 @@ export default function DayPage() {
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1024px)");
+    // Desktop(laptop) fixed layout / Mobile+Tablet compact layout
+    const mq = window.matchMedia("(max-width: 1100px)");
     const apply = () => setIsNarrow(mq.matches);
     apply();
     mq.addEventListener("change", apply);
@@ -721,11 +722,11 @@ export default function DayPage() {
       style={{
         padding: isNarrow ? 12 : 24,
         fontFamily: "system-ui",
-        maxWidth: "100%",
+        maxWidth: isNarrow ? "100%" : 1200,
         margin: "0 auto",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
         <h1 style={{ margin: 0 }}>TimeTracker</h1>
         <button
           onClick={clearAllRecords}
@@ -777,7 +778,9 @@ export default function DayPage() {
         </button>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: isNarrow ? "wrap" : "nowrap" }}
+      >
         <button onClick={() => moveDay(-1)}>◀</button>
         <strong>{day}</strong>
         <button onClick={() => moveDay(1)}>▶</button>
@@ -855,7 +858,7 @@ export default function DayPage() {
       </div>
 
       {/* 분 가늠용 헤더 */}
-      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: "auto" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: isNarrow ? "auto" : "visible" }}>
         <div style={{ width: 80 }} />
         <div
           style={{
@@ -883,7 +886,7 @@ export default function DayPage() {
           gap: 24,
           alignItems: "flex-start",
           flexDirection: isNarrow ? "column" : "row",
-          justifyContent: "space-between",
+          justifyContent: "flex-start",
         }}
       >
         {/* LEFT: 시간 라벨 + 격자 + (아래) 오늘 기록 */}
@@ -892,12 +895,12 @@ export default function DayPage() {
             display: "flex",
             flexDirection: "column",
             gap: 16,
-            width: isNarrow ? "100%" : 80 + 12 + GRID_W,
+            width: isNarrow ? "100%" : "auto",
             flex: isNarrow ? "1 1 auto" : "0 0 auto",
           }}
         >
           {/* 시간 라벨 + 격자 */}
-          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+          <div style={{ display: "flex", gap: 12, overflowX: isNarrow ? "auto" : "visible", paddingBottom: isNarrow ? 4 : 0 }}>
             {/* 시간 라벨 */}
             <div style={{ width: 80, fontSize: 11, opacity: 0.65 }}>
               <div style={{ height: 8 }} />
@@ -1112,7 +1115,7 @@ export default function DayPage() {
           <div
             style={{
               width: "100%",
-              maxWidth: 80 + 12 + GRID_W,
+              maxWidth: isNarrow ? "none" : 80 + 12 + GRID_W,
               border: "1px solid #eee",
               borderRadius: 14,
               background: "#fff",
@@ -1321,9 +1324,9 @@ export default function DayPage() {
         {/* RIGHT: 그래프 영역 */}
         <div
           style={{
-            flex: isNarrow ? "1 1 auto" : "1 1 520px",
+            flex: isNarrow ? "1 1 auto" : "1 1 560px",
             minWidth: isNarrow ? 0 : 360,
-            maxWidth: "100%",
+            maxWidth: isNarrow ? "100%" : 560,
             width: "100%",
             display: "flex",
             flexDirection: "column",
@@ -1370,7 +1373,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 760;
+              const W = isNarrow ? 760 : 560;
               const H = 320;
               const padL = 50;
               const padR = 20;
@@ -1390,7 +1393,7 @@ export default function DayPage() {
               const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
 
               return (
-                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "hidden" }}>
+                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "visible" }}>
                   <svg
                     width={W}
                     height={H}
@@ -1457,7 +1460,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 760;
+              const W = isNarrow ? 760 : 560;
               const H = 360;
               const padL = 50;
               const padR = 20;
@@ -1494,7 +1497,7 @@ export default function DayPage() {
                   style={{
                     marginTop: 14,
                     position: "relative",
-                    overflowX: isNarrow ? "auto" : "hidden",
+                    overflowX: isNarrow ? "auto" : "visible",
                   }}
                 >
                   {/* 범례(카테고리 칩) */}
