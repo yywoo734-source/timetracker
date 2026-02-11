@@ -185,6 +185,7 @@ export default function DayPage() {
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
+  const hydratedDayRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,13 +365,20 @@ export default function DayPage() {
     setDay(d.toISOString().slice(0, 10));
   }
 
-  // ✅ 날짜별 기록 불러오기
+  // ✅ 날짜 전환 시 현재 day 로딩 상태 초기화
   useEffect(() => {
+    hydratedDayRef.current = null;
+  }, [day]);
+
+  // ✅ 날짜별 기록 불러오기 (현재 day는 최초 1회만 반영해서 깜빡임 방지)
+  useEffect(() => {
+    if (hydratedDayRef.current === day) return;
     const rec = recordsByDay[day];
     if (!rec) return;
     setActualBlocks(rec.blocks);
     setNotesByCategory(rec.notesByCategory ?? {});
     setSaveStatus("saved");
+    hydratedDayRef.current = day;
   }, [day, recordsByDay]);
 
   // ✅ 날짜별 기록 저장
