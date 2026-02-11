@@ -883,10 +883,19 @@ export default function DayPage() {
           gap: 24,
           alignItems: "flex-start",
           flexDirection: isNarrow ? "column" : "row",
+          justifyContent: "space-between",
         }}
       >
         {/* LEFT: 시간 라벨 + 격자 + (아래) 오늘 기록 */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            width: isNarrow ? "100%" : 80 + 12 + GRID_W,
+            flex: isNarrow ? "1 1 auto" : "0 0 auto",
+          }}
+        >
           {/* 시간 라벨 + 격자 */}
           <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
             {/* 시간 라벨 */}
@@ -1312,7 +1321,7 @@ export default function DayPage() {
         {/* RIGHT: 그래프 영역 */}
         <div
           style={{
-            flex: 1,
+            flex: isNarrow ? "1 1 auto" : "1 1 520px",
             minWidth: isNarrow ? 0 : 360,
             maxWidth: isNarrow ? "100%" : 560,
             width: "100%",
@@ -1361,7 +1370,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = 760;
+              const W = isNarrow ? 760 : 520;
               const H = 320;
               const padL = 50;
               const padR = 20;
@@ -1381,7 +1390,7 @@ export default function DayPage() {
               const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
 
               return (
-                <div style={{ marginTop: 16, overflowX: "auto" }}>
+                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "hidden" }}>
                   <svg
                     width={W}
                     height={H}
@@ -1448,7 +1457,7 @@ export default function DayPage() {
             </div>
 
             {(() => {
-              const W = 760;
+              const W = isNarrow ? 760 : 520;
               const H = 360;
               const padL = 50;
               const padR = 20;
@@ -1481,7 +1490,13 @@ export default function DayPage() {
               const tooltipLeft = tooltip ? clamp(tooltip.x - 120, 8, W - 240) : 0;
 
               return (
-                <div style={{ marginTop: 14, position: "relative", overflowX: "auto" }}>
+                <div
+                  style={{
+                    marginTop: 14,
+                    position: "relative",
+                    overflowX: isNarrow ? "auto" : "hidden",
+                  }}
+                >
                   {/* 범례(카테고리 칩) */}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                     {categories.map((c) => {
