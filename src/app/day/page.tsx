@@ -1068,9 +1068,6 @@ export default function DayPage() {
 
                 isDraggingRef.current = false;
                 dragStartRef.current = idx;
-
-                setDragStart(idx);
-                setDragEnd(idx);
               }}
               onMouseMove={(e) => {
                 if (dragStartRef.current == null) return;
@@ -1078,8 +1075,13 @@ export default function DayPage() {
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                 const idx = snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left);
 
-                if (Math.abs(idx - dragStartRef.current) >= 5) isDraggingRef.current = true;
-                setDragEnd(idx);
+                if (Math.abs(idx - dragStartRef.current) >= 5) {
+                  if (!isDraggingRef.current) {
+                    isDraggingRef.current = true;
+                    setDragStart(dragStartRef.current);
+                  }
+                  setDragEnd(idx);
+                }
               }}
               onMouseUp={() => {
                 if (isDraggingRef.current) {
@@ -1114,9 +1116,6 @@ export default function DayPage() {
 
                 isDraggingRef.current = false;
                 dragStartRef.current = idx;
-
-                setDragStart(idx);
-                setDragEnd(idx);
               }}
               onTouchMove={(e) => {
                 if (dragStartRef.current == null) return;
@@ -1125,8 +1124,13 @@ export default function DayPage() {
                 const t = e.touches[0];
                 const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
 
-                if (Math.abs(idx - dragStartRef.current) >= 5) isDraggingRef.current = true;
-                setDragEnd(idx);
+                if (Math.abs(idx - dragStartRef.current) >= 5) {
+                  if (!isDraggingRef.current) {
+                    isDraggingRef.current = true;
+                    setDragStart(dragStartRef.current);
+                  }
+                  setDragEnd(idx);
+                }
               }}
               onTouchEnd={() => {
                 if (isDraggingRef.current) {
