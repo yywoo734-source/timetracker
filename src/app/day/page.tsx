@@ -223,14 +223,41 @@ export default function DayPage() {
     };
   }, [router]);
 
-  const clearAllRecords = useCallback(() => {
+  const clearAllRecords = useCallback(async () => {
     if (!confirm("모든 날짜의 기록을 정말 삭제할까?")) return;
-    setActualBlocks([]);
-    setNotesByCategory({});
-    setHistory([]);
-    setFuture([]);
-    alert("모든 기록이 삭제됐어요");
-  }, []);
+
+    if (!accessToken) {
+      alert("로그인 토큰이 없어 삭제할 수 없어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const res = await fetch("/api/records?all=1", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        alert("전체 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
+        setSaveStatus("saved");
+        return;
+      }
+
+      setActualBlocks([]);
+      setNotesByCategory({});
+      setRecordsByDay({});
+      setHistory([]);
+      setFuture([]);
+      setSaveStatus("saved");
+      alert("모든 기록이 삭제됐어요");
+    } catch {
+      setSaveStatus("saved");
+      alert("전체 삭제 중 오류가 발생했어요.");
+    }
+  }, [accessToken]);
 
   const isToday = day === isoDayKey03();
 

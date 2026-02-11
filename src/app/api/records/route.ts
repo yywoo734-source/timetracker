@@ -70,3 +70,23 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ record });
 }
+
+export async function DELETE(request: NextRequest) {
+  const { user, error } = await getUserFromRequest(request);
+  if (error || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const all = searchParams.get("all");
+
+  if (all !== "1") {
+    return NextResponse.json({ error: "all=1 required" }, { status: 400 });
+  }
+
+  await prisma.dayRecord.deleteMany({
+    where: { userId: user.id },
+  });
+
+  return NextResponse.json({ ok: true });
+}
