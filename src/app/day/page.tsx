@@ -373,15 +373,6 @@ export default function DayPage() {
     setSaveStatus("saved");
   }, [day, recordsByDay]);
 
-  // 그래프는 recordsByDay를 기준으로 계산되므로,
-  // 현재 날짜 편집값을 즉시 반영해 체감 지연을 없앤다.
-  useEffect(() => {
-    setRecordsByDay((prev) => ({
-      ...prev,
-      [day]: { blocks: actualBlocks, notesByCategory },
-    }));
-  }, [day, actualBlocks, notesByCategory]);
-
   // ✅ 날짜별 기록 저장
   useEffect(() => {
     if (!accessToken) return;
@@ -525,7 +516,7 @@ export default function DayPage() {
     const totalsByDay: Array<{ day: string; totals: Record<string, number>; totalMin: number }> = [];
 
     for (const d of trendDates) {
-      const blocks = recordsByDay[d]?.blocks ?? [];
+      const blocks = d === day ? actualBlocks : (recordsByDay[d]?.blocks ?? []);
       const totals: Record<string, number> = {};
       for (const c of categories) totals[c.id] = 0;
 
@@ -548,7 +539,7 @@ export default function DayPage() {
 
     const maxY = Math.max(1, ...yCandidates);
     return { totalsByDay, maxY };
-  }, [trendDates, categories, hiddenCategoryIds, hiddenTotal]);
+  }, [trendDates, day, actualBlocks, categories, recordsByDay, hiddenCategoryIds, hiddenTotal]);
 
   function toggleCategoryVisible(id: string) {
     setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
