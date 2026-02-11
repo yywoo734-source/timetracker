@@ -147,8 +147,10 @@ function isoDayKey03(date = new Date()) {
 }
 
 type DayRecord = { blocks: Block[]; notesByCategory: Record<string, string> };
+type ThemeMode = "light" | "dark";
 
 const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {} };
+const THEME_KEY = "timetracker_theme_mode_v1";
 
 function fmtDayLabel(isoDate: string) {
   // MM/DD
@@ -185,6 +187,7 @@ export default function DayPage() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const [isNarrow, setIsNarrow] = useState(false);
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
@@ -305,6 +308,22 @@ export default function DayPage() {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") {
+      setThemeMode(saved);
+      return;
+    }
+
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setThemeMode(prefersDark ? "dark" : "light");
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(THEME_KEY, themeMode);
+    document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
 
   // ✅ 카테고리 로드
   useEffect(() => {
@@ -565,6 +584,42 @@ export default function DayPage() {
     return { totalsByDay, maxY };
   }, [trendDates, day, actualBlocks, categories, recordsByDay, hiddenCategoryIds, hiddenTotal]);
 
+  const theme = useMemo(
+    () =>
+      themeMode === "dark"
+        ? {
+            bg: "#090f1c",
+            card: "#111827",
+            cardSoft: "#0b1220",
+            text: "#e5e7eb",
+            muted: "#94a3b8",
+            border: "#334155",
+            borderSubtle: "#1f2937",
+            controlBg: "#0f172a",
+            controlActiveBg: "#2563eb",
+            controlActiveText: "#ffffff",
+            controlText: "#e5e7eb",
+            axis: "#64748b",
+            grid: "#1e293b",
+          }
+        : {
+            bg: "#f7f8fb",
+            card: "#ffffff",
+            cardSoft: "#fafafa",
+            text: "#111827",
+            muted: "#6b7280",
+            border: "#e5e7eb",
+            borderSubtle: "#f1f5f9",
+            controlBg: "#ffffff",
+            controlActiveBg: "#111827",
+            controlActiveText: "#ffffff",
+            controlText: "#111827",
+            axis: "#6b7280",
+            grid: "#f3f4f6",
+          },
+    [themeMode]
+  );
+
   function toggleCategoryVisible(id: string) {
     setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
   }
@@ -691,7 +746,7 @@ export default function DayPage() {
 
   if (!authReady) {
     return (
-      <div style={{ maxWidth: 520, margin: "64px auto", padding: 24 }}>
+      <div style={{ maxWidth: 520, margin: "64px auto", padding: 24, color: theme.text }}>
         로딩 중...
       </div>
     );
@@ -700,9 +755,9 @@ export default function DayPage() {
   // ✅ 카테고리 없으면 setup으로 안내
   if (categories.length === 0) {
     return (
-      <div style={{ padding: 24, fontFamily: "system-ui" }}>
+      <div style={{ padding: 24, fontFamily: "system-ui", background: theme.bg, color: theme.text, minHeight: "100vh" }}>
         <h1 style={{ margin: 0 }}>TimeTracker</h1>
-        <p style={{ marginTop: 8, opacity: 0.75 }}>
+        <p style={{ marginTop: 8, color: theme.muted }}>
           먼저 항목(카테고리)과 색을 설정해야 해.
         </p>
         <button
@@ -711,9 +766,9 @@ export default function DayPage() {
             marginTop: 10,
             padding: "10px 14px",
             borderRadius: 10,
-            border: "1px solid #ddd",
-            background: "#111827",
-            color: "#fff",
+            border: `1px solid ${theme.border}`,
+            background: theme.controlActiveBg,
+            color: theme.controlActiveText,
             cursor: "pointer",
           }}
         >
@@ -730,18 +785,36 @@ export default function DayPage() {
         fontFamily: "system-ui",
         maxWidth: isNarrow ? "100%" : 1200,
         margin: "0 auto",
+        background: theme.bg,
+        color: theme.text,
+        minHeight: "100vh",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
         <h1 style={{ margin: 0 }}>TimeTracker</h1>
         <button
+          aria-label={themeMode === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+          onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          {themeMode === "dark" ? "Light" : "Dark"}
+        </button>
+        <button
           onClick={clearAllRecords}
           style={{
             padding: "8px 12px",
             borderRadius: 10,
-            border: "1px solid #fca5a5",
-            background: "#fff",
-            color: "#b91c1c",
+            border: `1px solid ${themeMode === "dark" ? "#7f1d1d" : "#fca5a5"}`,
+            background: theme.controlBg,
+            color: themeMode === "dark" ? "#fca5a5" : "#b91c1c",
             cursor: "pointer",
             fontSize: 13,
           }}
@@ -752,7 +825,7 @@ export default function DayPage() {
           style={{
             marginLeft: isNarrow ? 0 : "auto",
             fontSize: 12,
-            opacity: 0.75,
+            color: theme.muted,
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -774,8 +847,9 @@ export default function DayPage() {
           style={{
             padding: "8px 12px",
             borderRadius: 10,
-            border: "1px solid #ddd",
-            background: "#fff",
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
             cursor: "pointer",
             fontSize: 13,
           }}
@@ -789,9 +863,9 @@ export default function DayPage() {
               style={{
                 padding: "8px 12px",
                 borderRadius: 10,
-                border: "1px solid #d1d5db",
-                background: "#111827",
-                color: "#fff",
+                border: `1px solid ${theme.border}`,
+                background: theme.controlActiveBg,
+                color: theme.controlActiveText,
                 cursor: "pointer",
                 fontSize: 13,
               }}
@@ -803,9 +877,9 @@ export default function DayPage() {
               style={{
                 padding: "8px 12px",
                 borderRadius: 10,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-                color: "#111827",
+                border: `1px solid ${theme.border}`,
+                background: theme.controlBg,
+                color: theme.controlText,
                 cursor: "pointer",
                 fontSize: 13,
               }}
@@ -819,21 +893,31 @@ export default function DayPage() {
       <div
         style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: isNarrow ? "wrap" : "nowrap" }}
       >
-        <button onClick={() => moveDay(-1)}>◀</button>
+        <button
+          onClick={() => moveDay(-1)}
+          style={{ border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.controlBg, color: theme.controlText }}
+        >
+          ◀
+        </button>
         <strong>{day}</strong>
-        <button onClick={() => moveDay(1)}>▶</button>
+        <button
+          onClick={() => moveDay(1)}
+          style={{ border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.controlBg, color: theme.controlText }}
+        >
+          ▶
+        </button>
       </div>
 
-      <p style={{ marginTop: 6, opacity: 0.7 }}>03:00 ~ 다음날 03:00</p>
+      <p style={{ marginTop: 6, color: theme.muted }}>03:00 ~ 다음날 03:00</p>
 
       {/* 요약 */}
       <div
         style={{
           marginTop: 12,
           padding: 12,
-          border: "1px solid #eee",
+          border: `1px solid ${theme.border}`,
           borderRadius: 12,
-          background: "#fafafa",
+          background: theme.cardSoft,
           display: "flex",
           gap: 12,
           flexWrap: "wrap",
@@ -850,8 +934,8 @@ export default function DayPage() {
               gap: 6,
               padding: "4px 10px",
               borderRadius: 999,
-              background: "white",
-              border: "1px solid #eee",
+              background: theme.card,
+              border: `1px solid ${theme.border}`,
             }}
           >
             <span
@@ -879,9 +963,9 @@ export default function DayPage() {
             style={{
               padding: "6px 12px",
               borderRadius: 999,
-              border: "1px solid #ddd",
-              background: activeCategoryId === cat.id ? cat.color : "#fff",
-              color: activeCategoryId === cat.id ? "#fff" : "#333",
+              border: `1px solid ${theme.border}`,
+              background: activeCategoryId === cat.id ? cat.color : theme.controlBg,
+              color: activeCategoryId === cat.id ? "#fff" : theme.controlText,
               cursor: "pointer",
               fontSize: 13,
             }}
@@ -891,7 +975,7 @@ export default function DayPage() {
         ))}
       </div>
 
-      <div style={{ marginTop: 16, fontSize: 13, opacity: 0.7 }}>
+      <div style={{ marginTop: 16, fontSize: 13, color: theme.muted }}>
         격자에서 드래그해서 5분 칸 단위로 체크해봐
       </div>
 
@@ -967,11 +1051,11 @@ export default function DayPage() {
               style={{
                 width: GRID_W,
                 height: GRID_H,
-                border: "1px solid #ddd",
+                border: `1px solid ${theme.border}`,
                 position: "relative",
                 borderRadius: 12,
                 overflow: "hidden",
-                background: "#fff",
+                background: theme.card,
                 userSelect: "none",
                 touchAction: "none",
               }}
@@ -1117,8 +1201,8 @@ export default function DayPage() {
                         width: CELL,
                         height: CELL,
                         boxSizing: "border-box",
-                        borderRight: "1px solid #eee",
-                        borderBottom: "1px solid #eee",
+                        borderRight: `1px solid ${theme.borderSubtle}`,
+                        borderBottom: `1px solid ${theme.borderSubtle}`,
                         background: isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent",
                       }}
                       title={labelFromIndex03(i * 5)}
@@ -1154,9 +1238,9 @@ export default function DayPage() {
             style={{
               width: "100%",
               maxWidth: isNarrow ? "none" : 80 + 12 + GRID_W,
-              border: "1px solid #eee",
+              border: `1px solid ${theme.border}`,
               borderRadius: 14,
-              background: "#fff",
+              background: theme.card,
               padding: 14,
             }}
           >
@@ -1179,8 +1263,8 @@ export default function DayPage() {
                       gap: 6,
                       padding: "4px 10px",
                       borderRadius: 999,
-                      border: "1px solid #eee",
-                      background: "#fafafa",
+                      border: `1px solid ${theme.border}`,
+                      background: theme.cardSoft,
                       fontSize: 12,
                     }}
                   >
@@ -1209,9 +1293,9 @@ export default function DayPage() {
                     style={{
                       padding: "6px 10px",
                       borderRadius: 999,
-                      border: "1px solid #e5e7eb",
-                      background: showAllNotes ? "#111827" : "#fff",
-                      color: showAllNotes ? "#fff" : "#111827",
+                      border: `1px solid ${theme.border}`,
+                      background: showAllNotes ? theme.controlActiveBg : theme.controlBg,
+                      color: showAllNotes ? theme.controlActiveText : theme.controlText,
                       cursor: "pointer",
                       fontSize: 12,
                     }}
@@ -1224,8 +1308,9 @@ export default function DayPage() {
                     style={{
                       padding: "6px 10px",
                       borderRadius: 999,
-                      border: "1px solid #e5e7eb",
-                      background: "#fff",
+                      border: `1px solid ${theme.border}`,
+                      background: theme.controlBg,
+                      color: theme.controlText,
                       cursor: "pointer",
                       fontSize: 12,
                     }}
@@ -1274,7 +1359,9 @@ export default function DayPage() {
                           width: isNarrow ? "100%" : undefined,
                           padding: "8px 10px",
                           borderRadius: 10,
-                          border: "1px solid #e5e7eb",
+                          border: `1px solid ${theme.border}`,
+                          background: theme.cardSoft,
+                          color: theme.text,
                           fontSize: 12,
                           outline: "none",
                         }}
@@ -1292,7 +1379,7 @@ export default function DayPage() {
             <div
               style={{
                 marginTop: 12,
-                borderTop: "1px solid #f3f4f6",
+                borderTop: `1px solid ${theme.borderSubtle}`,
                 paddingTop: 10,
                 maxHeight: 240,
                 overflow: "auto",
@@ -1333,10 +1420,10 @@ export default function DayPage() {
                             }}
                           />
                           <div style={{ display: "flex", flexDirection: "column" }}>
-                            <div style={{ fontSize: 12, fontWeight: 800, color: "#111827" }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: theme.text }}>
                               {cat?.label ?? "(알 수 없음)"}
                             </div>
-                            <div style={{ fontSize: 12, opacity: 0.7 }}>
+                            <div style={{ fontSize: 12, color: theme.muted }}>
                               {start} ~ {end}
                             </div>
                             {(() => {
@@ -1381,9 +1468,9 @@ export default function DayPage() {
              ======================= */}
           <div
             style={{
-              border: "1px solid #eee",
+              border: `1px solid ${theme.border}`,
               borderRadius: 14,
-              background: "#fff",
+              background: theme.card,
               padding: 16,
             }}
           >
@@ -1398,9 +1485,9 @@ export default function DayPage() {
                   style={{
                     padding: "6px 12px",
                     borderRadius: 999,
-                    border: "1px solid #ddd",
-                    background: trendDays === d ? "#111827" : "#fff",
-                    color: trendDays === d ? "#fff" : "#111827",
+                    border: `1px solid ${theme.border}`,
+                    background: trendDays === d ? theme.controlActiveBg : theme.controlBg,
+                    color: trendDays === d ? theme.controlActiveText : theme.controlText,
                     cursor: "pointer",
                     fontSize: 13,
                   }}
@@ -1451,18 +1538,18 @@ export default function DayPage() {
                     const yy = y(v);
                     return (
                       <g key={i}>
-                        <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke="#f3f4f6" />
-                        <text x={10} y={yy + 4} fontSize={11} fill="#6b7280">
+                        <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke={theme.grid} />
+                        <text x={10} y={yy + 4} fontSize={11} fill={theme.axis}>
                           {fmtMin(Math.round(v))}
                         </text>
                       </g>
                     );
                   })}
 
-                  <polyline points={points} fill="none" stroke="#111827" strokeWidth={3} />
+                  <polyline points={points} fill="none" stroke={theme.text} strokeWidth={3} />
 
                   {days.map((d, i) => (
-                    <circle key={i} cx={xAt(i)} cy={y(d.totalMin)} r={4} fill="#111827" />
+                    <circle key={i} cx={xAt(i)} cy={y(d.totalMin)} r={4} fill={theme.text} />
                   ))}
 
                   {hoverIndex != null && (
@@ -1471,7 +1558,7 @@ export default function DayPage() {
                       x2={xAt(hoverIndex)}
                       y1={padT}
                       y2={H - padB}
-                      stroke="#cbd5e1"
+                      stroke={theme.axis}
                       strokeDasharray="4 4"
                     />
                   )}
@@ -1486,14 +1573,14 @@ export default function DayPage() {
              ======================= */}
           <div
             style={{
-              border: "1px solid #eee",
+              border: `1px solid ${theme.border}`,
               borderRadius: 14,
-              background: "#fff",
+              background: theme.card,
               padding: 16,
             }}
           >
             <div style={{ fontWeight: 800, fontSize: 16 }}>과목별 공부시간 추이</div>
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>
               아래 범례를 클릭하면 과목별 라인을 숨기거나 다시 볼 수 있어
             </div>
 
@@ -1552,9 +1639,9 @@ export default function DayPage() {
                             gap: 8,
                             padding: "6px 10px",
                             borderRadius: 999,
-                            border: "1px solid #e5e7eb",
-                            background: hidden ? "#fff" : "#111827",
-                            color: hidden ? "#111827" : "#fff",
+                            border: `1px solid ${theme.border}`,
+                            background: hidden ? theme.controlBg : theme.controlActiveBg,
+                            color: hidden ? theme.controlText : theme.controlActiveText,
                             cursor: "pointer",
                             fontSize: 12,
                           }}
@@ -1595,8 +1682,8 @@ export default function DayPage() {
                       const yy = y(v);
                       return (
                         <g key={i}>
-                          <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke="#f3f4f6" />
-                          <text x={10} y={yy + 4} fontSize={11} fill="#6b7280">
+                          <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke={theme.grid} />
+                          <text x={10} y={yy + 4} fontSize={11} fill={theme.axis}>
                             {fmtMin(Math.round(v))}
                           </text>
                         </g>
@@ -1612,7 +1699,7 @@ export default function DayPage() {
                           x={xAt(i)}
                           y={H - 16}
                           fontSize={11}
-                          fill="#6b7280"
+                          fill={theme.axis}
                           textAnchor="middle"
                         >
                           {fmtDayLabel(d.day)}
@@ -1648,7 +1735,7 @@ export default function DayPage() {
                           x2={xAt(hoverIndex)}
                           y1={padT}
                           y2={H - padB}
-                          stroke="#cbd5e1"
+                          stroke={theme.axis}
                           strokeDasharray="4 4"
                         />
                         {categories
@@ -1676,8 +1763,8 @@ export default function DayPage() {
                         top: 6,
                         left: tooltipLeft,
                         width: 240,
-                        border: "1px solid #e5e7eb",
-                        background: "rgba(255,255,255,0.98)",
+                        border: `1px solid ${theme.border}`,
+                        background: themeMode === "dark" ? "rgba(17,24,39,0.97)" : "rgba(255,255,255,0.98)",
                         borderRadius: 12,
                         padding: 10,
                         boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
@@ -1712,9 +1799,9 @@ export default function DayPage() {
                                     display: "inline-block",
                                   }}
                                 />
-                                <span style={{ color: "#111827" }}>{c.label}</span>
+                                <span style={{ color: theme.text }}>{c.label}</span>
                               </div>
-                              <span style={{ color: "#111827", fontWeight: 700 }}>{fmtMin(v)}</span>
+                              <span style={{ color: theme.text, fontWeight: 700 }}>{fmtMin(v)}</span>
                             </div>
                           );
                         })}
