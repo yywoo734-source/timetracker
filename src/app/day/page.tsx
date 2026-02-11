@@ -163,6 +163,7 @@ export default function DayPage() {
   const [authReady, setAuthReady] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [recordsByDay, setRecordsByDay] = useState<Record<string, DayRecord>>({});
+  const [showAdminLinks, setShowAdminLinks] = useState(false);
 
   // ✅ Step 1: 03시 기준 날짜
   const [day, setDay] = useState(() => {
@@ -212,6 +213,8 @@ export default function DayPage() {
             router.replace("/pending");
             return;
           }
+          const email = String(body.user?.email ?? "").toLowerCase();
+          setShowAdminLinks(email === "yywoo7@naver.com");
         }
 
         if (!cancelled) setAuthReady(true);
@@ -779,6 +782,38 @@ export default function DayPage() {
         >
           설정
         </button>
+        {showAdminLinks && (
+          <>
+            <button
+              onClick={() => router.push("/admin")}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                background: "#111827",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              관리자 승인/할당
+            </button>
+            <button
+              onClick={() => router.push("/admin/records")}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                color: "#111827",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              학생 기록 보기
+            </button>
+          </>
+        )}
       </div>
 
       <div
