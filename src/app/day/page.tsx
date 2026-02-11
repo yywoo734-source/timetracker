@@ -346,6 +346,15 @@ export default function DayPage() {
     setSaveStatus("saved");
   }, [day, recordsByDay]);
 
+  // 그래프는 recordsByDay를 기준으로 계산되므로,
+  // 현재 날짜 편집값을 즉시 반영해 체감 지연을 없앤다.
+  useEffect(() => {
+    setRecordsByDay((prev) => ({
+      ...prev,
+      [day]: { blocks: actualBlocks, notesByCategory },
+    }));
+  }, [day, actualBlocks, notesByCategory]);
+
   // ✅ 날짜별 기록 저장
   useEffect(() => {
     if (!accessToken) return;
