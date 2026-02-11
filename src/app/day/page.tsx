@@ -183,6 +183,7 @@ export default function DayPage() {
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const [isNarrow, setIsNarrow] = useState(false);
+  const [dayReadyForSave, setDayReadyForSave] = useState(false);
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
@@ -378,6 +379,7 @@ export default function DayPage() {
   // ✅ 날짜 전환 시 현재 day 로딩 상태 초기화
   useEffect(() => {
     hydratedDayRef.current = null;
+    setDayReadyForSave(false);
   }, [day]);
 
   // ✅ 날짜별 기록 불러오기 (현재 day는 최초 1회만 반영해서 깜빡임 방지)
@@ -389,11 +391,12 @@ export default function DayPage() {
     setNotesByCategory(rec.notesByCategory ?? {});
     setSaveStatus("saved");
     hydratedDayRef.current = day;
+    setDayReadyForSave(true);
   }, [day, recordsByDay]);
 
   // ✅ 날짜별 기록 저장
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !dayReadyForSave) return;
     setSaveStatus("saving");
     const t = window.setTimeout(async () => {
       const res = await fetch("/api/records", {
@@ -421,7 +424,7 @@ export default function DayPage() {
     }, 200);
 
     return () => window.clearTimeout(t);
-  }, [accessToken, actualBlocks, notesByCategory, day]);
+  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, categories, day]);
   // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
   useEffect(() => {
     setNotesByCategory((prev) => {
