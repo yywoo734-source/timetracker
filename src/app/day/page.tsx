@@ -182,6 +182,7 @@ export default function DayPage() {
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const [isNarrow, setIsNarrow] = useState(false);
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
@@ -290,6 +291,14 @@ export default function DayPage() {
     tick();
     const id = setInterval(tick, 60 * 1000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1024px)");
+    const apply = () => setIsNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   // ✅ 카테고리 로드
@@ -708,8 +717,15 @@ export default function DayPage() {
   }
 
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui", maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div
+      style={{
+        padding: isNarrow ? 12 : 24,
+        fontFamily: "system-ui",
+        maxWidth: 1200,
+        margin: "0 auto",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>TimeTracker</h1>
         <button
           onClick={clearAllRecords}
@@ -727,7 +743,7 @@ export default function DayPage() {
         </button>
         <div
           style={{
-            marginLeft: "auto",
+            marginLeft: isNarrow ? 0 : "auto",
             fontSize: 12,
             opacity: 0.75,
             display: "flex",
@@ -761,7 +777,7 @@ export default function DayPage() {
         </button>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
         <button onClick={() => moveDay(-1)}>◀</button>
         <strong>{day}</strong>
         <button onClick={() => moveDay(1)}>▶</button>
@@ -839,7 +855,7 @@ export default function DayPage() {
       </div>
 
       {/* 분 가늠용 헤더 */}
-      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: "auto" }}>
         <div style={{ width: 80 }} />
         <div
           style={{
@@ -860,11 +876,19 @@ export default function DayPage() {
       </div>
 
       {/* LEFT + RIGHT: 타임트래커 / 그래프 */}
-      <div style={{ marginTop: 8, display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginTop: 8,
+          display: "flex",
+          gap: 24,
+          alignItems: "flex-start",
+          flexDirection: isNarrow ? "column" : "row",
+        }}
+      >
         {/* LEFT: 시간 라벨 + 격자 + (아래) 오늘 기록 */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
           {/* 시간 라벨 + 격자 */}
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
             {/* 시간 라벨 */}
             <div style={{ width: 80, fontSize: 11, opacity: 0.65 }}>
               <div style={{ height: 8 }} />
@@ -1078,7 +1102,8 @@ export default function DayPage() {
           {/* 아래 카드: 오늘 기록 리스트 */}
           <div
             style={{
-              width: 80 + 12 + GRID_W,
+              width: "100%",
+              maxWidth: 80 + 12 + GRID_W,
               border: "1px solid #eee",
               borderRadius: 14,
               background: "#fff",
@@ -1169,6 +1194,7 @@ export default function DayPage() {
                         display: "flex",
                         alignItems: "center",
                         gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
                       <div style={{ width: 120, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1195,6 +1221,7 @@ export default function DayPage() {
                         style={{
                           flex: 1,
                           minWidth: 180,
+                          width: isNarrow ? "100%" : undefined,
                           padding: "8px 10px",
                           borderRadius: 10,
                           border: "1px solid #e5e7eb",
@@ -1286,13 +1313,14 @@ export default function DayPage() {
         <div
           style={{
             flex: 1,
-            minWidth: 360,
-            maxWidth: 560,
+            minWidth: isNarrow ? 0 : 360,
+            maxWidth: isNarrow ? "100%" : 560,
+            width: "100%",
             display: "flex",
             flexDirection: "column",
             gap: 24,
-            position: "sticky",
-            top: 24,
+            position: isNarrow ? "static" : "sticky",
+            top: isNarrow ? undefined : 24,
             alignSelf: "flex-start",
           }}
         >
@@ -1353,20 +1381,21 @@ export default function DayPage() {
               const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
 
               return (
-                <svg
-                  width={W}
-                  height={H}
-                  style={{ marginTop: 16 }}
-                  onMouseLeave={() => setHoverIndex(null)}
-                  onMouseMove={(e) => {
-                    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-                    const mx = e.clientX - rect.left;
-                    if (mx < padL || mx > W - padR) return;
+                <div style={{ marginTop: 16, overflowX: "auto" }}>
+                  <svg
+                    width={W}
+                    height={H}
+                    style={{ display: "block", minWidth: W }}
+                    onMouseLeave={() => setHoverIndex(null)}
+                    onMouseMove={(e) => {
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const mx = e.clientX - rect.left;
+                      if (mx < padL || mx > W - padR) return;
 
-                    const idx = Math.round((mx - padL) / (xStep || 1));
-                    setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
-                  }}
-                >
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
+                  >
                   {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
                     const v = yMax * p;
                     const yy = y(v);
@@ -1396,7 +1425,8 @@ export default function DayPage() {
                       strokeDasharray="4 4"
                     />
                   )}
-                </svg>
+                  </svg>
+                </div>
               );
             })()}
           </div>
@@ -1451,7 +1481,7 @@ export default function DayPage() {
               const tooltipLeft = tooltip ? clamp(tooltip.x - 120, 8, W - 240) : 0;
 
               return (
-                <div style={{ marginTop: 14, position: "relative" }}>
+                <div style={{ marginTop: 14, position: "relative", overflowX: "auto" }}>
                   {/* 범례(카테고리 칩) */}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                     {categories.map((c) => {
