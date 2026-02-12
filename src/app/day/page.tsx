@@ -166,6 +166,8 @@ export default function DayPage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [recordsByDay, setRecordsByDay] = useState<Record<string, DayRecord>>({});
   const [showAdminLinks, setShowAdminLinks] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState<string>("");
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
 
   // ✅ Step 1: 03시 기준 날짜
   const [day, setDay] = useState(() => {
@@ -203,6 +205,7 @@ export default function DayPage() {
           router.replace("/login");
           return;
         }
+        setCurrentUserEmail(data.user.email ?? "");
 
         const session = await supabase.auth.getSession();
         const token = session.data.session?.access_token;
@@ -216,6 +219,8 @@ export default function DayPage() {
             router.replace("/pending");
             return;
           }
+          setCurrentUserName(String(body.user?.name ?? ""));
+          setCurrentUserEmail(String(body.user?.email ?? data.user.email ?? ""));
           const email = String(body.user?.email ?? "").toLowerCase();
           setShowAdminLinks(email === "yywoo7@naver.com");
         }
@@ -792,6 +797,15 @@ export default function DayPage() {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
         <h1 style={{ margin: 0 }}>TimeTracker</h1>
+        <div
+          style={{
+            fontSize: 13,
+            color: theme.muted,
+            marginRight: 4,
+          }}
+        >
+          {currentUserName ? `${currentUserName} (${currentUserEmail})` : currentUserEmail}
+        </div>
         <button
           aria-label={themeMode === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
           onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
