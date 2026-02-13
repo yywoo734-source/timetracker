@@ -23,7 +23,7 @@ export default function LoginPage() {
 
     try {
       if (mode === "signup") {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -32,14 +32,17 @@ export default function LoginPage() {
         });
         if (signUpError) throw signUpError;
 
-        const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token;
-        const bootstrapRes = await fetch("/api/bootstrap", {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        if (!bootstrapRes.ok) {
-          throw new Error("프로필 생성에 실패했어요. 다시 시도해 주세요.");
+        const token =
+          signUpData.session?.access_token ??
+          (await supabase.auth.getSession()).data.session?.access_token;
+
+        // 이메일 인증이 켜진 경우 signUp 직후 세션이 없을 수 있으므로,
+        // bootstrap은 "가능할 때만" 수행하고 가입 흐름은 막지 않는다.
+        if (token) {
+          await fetch("/api/bootstrap", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
         }
 
         router.replace("/pending");
