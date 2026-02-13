@@ -1259,13 +1259,10 @@ function fmtMin(min: number) {
               }}
             />
             <span style={{ fontSize: 13 }}>
-              {c.label}: {fmtMin(summary.totals[c.id] ?? 0)}
+              {autoTrackCategoryId === c.id
+                ? `${c.label}: ${fmtElapsed(autoTrackCumulativeSec)}`
+                : `${c.label}: ${fmtMin(summary.totals[c.id] ?? 0)}`}
             </span>
-            {autoTrackCategoryId === c.id && (
-              <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>
-                누적 {fmtElapsed(autoTrackCumulativeSec)}
-              </span>
-            )}
           </button>
         ))}
       </div>
