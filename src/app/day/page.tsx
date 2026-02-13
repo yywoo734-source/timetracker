@@ -824,14 +824,20 @@ function fmtMin(min: number) {
 
   function stopAutoTrack(flush = true) {
     const targetDay = autoTrackDay ?? day;
-    if (flush && autoTrackCategoryId && runningElapsedSec > 0) {
+    const liveElapsedSec =
+      autoTrackStartedAtMs != null
+        ? Math.max(0, Math.floor((Date.now() - autoTrackStartedAtMs) / 1000))
+        : 0;
+    const flushSec = Math.max(runningElapsedSec, liveElapsedSec);
+
+    if (flush && autoTrackCategoryId && flushSec > 0) {
       setSecondsByDay((prev) => {
         const dayMap = prev[targetDay] ?? {};
         return {
           ...prev,
           [targetDay]: {
             ...dayMap,
-            [autoTrackCategoryId]: (dayMap[autoTrackCategoryId] ?? 0) + runningElapsedSec,
+            [autoTrackCategoryId]: (dayMap[autoTrackCategoryId] ?? 0) + flushSec,
           },
         };
       });
@@ -856,6 +862,11 @@ function fmtMin(min: number) {
     if (!isToday) {
       alert("자동 기록은 오늘 화면에서만 사용할 수 있어요.");
       return;
+    }
+
+    if (autoTrackCategoryId && autoTrackCategoryId !== categoryId) {
+      // 과목 전환 시 기존 과목은 그 시점까지 즉시 누적 반영
+      stopAutoTrack(true);
     }
 
     setActiveCategoryId(categoryId);
