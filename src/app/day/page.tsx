@@ -168,6 +168,12 @@ function parseLocalDate(isoDate: string) {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
+function min03FromMsForDay(dayIso: string, ms: number) {
+  const dayStart = parseLocalDate(dayIso);
+  dayStart.setHours(3, 0, 0, 0);
+  return (ms - dayStart.getTime()) / 60000;
+}
+
 type DayRecord = {
   blocks: Block[];
   notesByCategory: Record<string, string>;
@@ -216,7 +222,7 @@ export default function DayPage() {
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
   const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
   const [autoTrackDay, setAutoTrackDay] = useState<string | null>(null);
-  const autoTrackLastMinRef = useRef<number | null>(null);
+  const autoTrackStartedAtMsRef = useRef<number | null>(null);
   const [autoTrackStartedAtMs, setAutoTrackStartedAtMs] = useState<number | null>(null);
   const [autoTrackNowMs, setAutoTrackNowMs] = useState<number>(Date.now());
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
@@ -296,7 +302,6 @@ export default function DayPage() {
       setSecondsByDay({});
       setAutoTrackCategoryId(null);
       setAutoTrackDay(null);
-      autoTrackLastMinRef.current = null;
       setAutoTrackStartedAtMs(null);
       setHistory([]);
       setFuture([]);
@@ -335,7 +340,6 @@ export default function DayPage() {
       setSecondsByDay((prev) => ({ ...prev, [day]: {} }));
       setAutoTrackCategoryId(null);
       setAutoTrackDay(null);
-      autoTrackLastMinRef.current = null;
       setAutoTrackStartedAtMs(null);
       setHistory([]);
       setFuture([]);
@@ -824,28 +828,60 @@ function fmtMin(min: number) {
 
   function stopAutoTrack(flush = true) {
     const targetDay = autoTrackDay ?? day;
+    const targetCategoryId = autoTrackCategoryId;
+    const startedAt = autoTrackStartedAtMsRef.current ?? autoTrackStartedAtMs;
+    const endedAt = Date.now();
     const liveElapsedSec =
-      autoTrackStartedAtMs != null
-        ? Math.max(0, Math.floor((Date.now() - autoTrackStartedAtMs) / 1000))
+      startedAt != null
+        ? Math.max(0, Math.floor((endedAt - startedAt) / 1000))
         : 0;
     const flushSec = Math.max(runningElapsedSec, liveElapsedSec);
 
-    if (flush && autoTrackCategoryId && flushSec > 0) {
+    if (flush && targetCategoryId && flushSec > 0) {
       setSecondsByDay((prev) => {
         const dayMap = prev[targetDay] ?? {};
         return {
           ...prev,
           [targetDay]: {
             ...dayMap,
-            [autoTrackCategoryId]: (dayMap[autoTrackCategoryId] ?? 0) + flushSec,
+            [targetCategoryId]: (dayMap[targetCategoryId] ?? 0) + flushSec,
           },
         };
       });
+
+      if (startedAt != null) {
+        const startMin = clamp(Math.floor(min03FromMsForDay(targetDay, startedAt)), 0, 1439);
+        const endMin = clamp(Math.ceil(min03FromMsForDay(targetDay, endedAt)), 0, 1440);
+        const dur = Math.max(1, endMin - startMin);
+        const timerBlock: Block = {
+          id: uuid(),
+          start: startMin,
+          dur,
+          categoryId: targetCategoryId,
+        };
+
+        if (targetDay === day) {
+          setActualBlocks((prev) => applyBlock(prev, timerBlock));
+        } else {
+          setRecordsByDay((prev) => {
+            const existing = prev[targetDay] ?? EMPTY_RECORD;
+            return {
+              ...prev,
+              [targetDay]: {
+                ...existing,
+                blocks: applyBlock(existing.blocks, timerBlock),
+                notesByCategory: existing.notesByCategory ?? {},
+                secondsByCategory: existing.secondsByCategory ?? {},
+              },
+            };
+          });
+        }
+      }
     }
 
     setAutoTrackCategoryId(null);
     setAutoTrackDay(null);
-    autoTrackLastMinRef.current = null;
+    autoTrackStartedAtMsRef.current = null;
     setAutoTrackStartedAtMs(null);
   }
 
@@ -872,48 +908,11 @@ function fmtMin(min: number) {
     setActiveCategoryId(categoryId);
     setAutoTrackCategoryId(categoryId);
     setAutoTrackDay(day);
-    autoTrackLastMinRef.current = getCurrentMin03();
     const nowMs = Date.now();
+    autoTrackStartedAtMsRef.current = nowMs;
     setAutoTrackStartedAtMs(nowMs);
     setAutoTrackNowMs(nowMs);
   }
-
-  useEffect(() => {
-    if (!autoTrackCategoryId) return;
-
-    const tick = () => {
-      if (!isToday) return;
-      const now = getCurrentMin03();
-      const prev = autoTrackLastMinRef.current;
-      if (prev == null) {
-        autoTrackLastMinRef.current = now;
-        return;
-      }
-      if (now < prev) {
-        autoTrackLastMinRef.current = now;
-        return;
-      }
-
-      const from = Math.ceil(prev / 5) * 5;
-      const to = Math.floor(now / 5) * 5;
-
-      if (to > from) {
-        setActualBlocks((current) =>
-          applyBlock(current, {
-            start: from,
-            dur: to - from,
-            categoryId: autoTrackCategoryId,
-          })
-        );
-      }
-
-      autoTrackLastMinRef.current = now;
-    };
-
-    tick();
-    const id = window.setInterval(tick, 15000);
-    return () => window.clearInterval(id);
-  }, [autoTrackCategoryId, isToday]);
 
   function removeBlockAt(min: number) {
     setActualBlocks((prev) => {
