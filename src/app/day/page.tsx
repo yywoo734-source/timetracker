@@ -183,6 +183,14 @@ function parseLocalDate(isoDate: string) {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
+function mondayStart(isoDate: string) {
+  const d = parseLocalDate(isoDate);
+  const day = d.getDay(); // 0 Sun ... 6 Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return formatLocalDate(d);
+}
+
 function min03FromMsForDay(dayIso: string, ms: number) {
   const dayStart = parseLocalDate(dayIso);
   dayStart.setHours(3, 0, 0, 0);
@@ -651,6 +659,7 @@ export default function DayPage() {
 
   // ✅ 최근 N일 변화 추이(7/14/30) + 범례 토글 + hover 툴팁
   const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
+  const [investRange, setInvestRange] = useState<"day" | "week" | "month">("day");
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -659,6 +668,25 @@ export default function DayPage() {
     // 현재 보고 있는 day를 기준으로 과거 (trendDays-1)일 + 오늘(총 trendDays)
     return Array.from({ length: trendDays }).map((_, i) => addDays(day, i - (trendDays - 1)));
   }, [day, trendDays]);
+
+  const investDates = useMemo(() => {
+    if (investRange === "day") return [day];
+    if (investRange === "week") {
+      const start = mondayStart(day);
+      return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
+    }
+    const d = parseLocalDate(day);
+    const first = new Date(d.getFullYear(), d.getMonth(), 1);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const days = last.getDate();
+    const startIso = formatLocalDate(first);
+    return Array.from({ length: days }).map((_, i) => addDays(startIso, i));
+  }, [day, investRange]);
+
+  const daysToLoad = useMemo(() => {
+    const set = new Set<string>([...trendDates, ...investDates, day]);
+    return Array.from(set);
+  }, [trendDates, investDates, day]);
 
   // ✅ 선택 범위
   const [dragStart, setDragStart] = useState<number | null>(null);
@@ -796,7 +824,7 @@ function fmtMin(min: number) {
     async function loadDays() {
       const headers = { Authorization: `Bearer ${accessToken}` };
       const results = await Promise.all(
-        trendDates.map(async (d) => {
+        daysToLoad.map(async (d) => {
           const res = await fetch(`/api/records?day=${d}`, { headers });
           if (!res.ok) return [d, EMPTY_RECORD] as const;
           const body = await res.json();
@@ -849,7 +877,7 @@ function fmtMin(min: number) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, trendDates]);
+  }, [accessToken, daysToLoad]);
 
   const trend = useMemo(() => {
     const totalsByDay: Array<{ day: string; totals: Record<string, number>; totalMin: number }> = [];
@@ -894,6 +922,38 @@ function fmtMin(min: number) {
     hiddenCategoryIds,
     hiddenTotal,
   ]);
+
+  const investSummary = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const c of categories) totals[c.id] = 0;
+
+    for (const d of investDates) {
+      const blocks = d === day ? actualBlocks : (recordsByDay[d]?.blocks ?? []);
+      const daySeconds = secondsByDay[d] ?? {};
+
+      for (const c of categories) {
+        totals[c.id] = (totals[c.id] ?? 0) + (daySeconds[c.id] ?? 0) / 60;
+      }
+      for (const b of blocks) {
+        totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+      }
+      if (d === day && autoTrackCategoryId) {
+        totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
+      }
+    }
+
+    const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
+    const rows = categories
+      .map((c) => {
+        const min = totals[c.id] ?? 0;
+        const pct = totalMin > 0 ? (min / totalMin) * 100 : 0;
+        return { ...c, min, pct };
+      })
+      .filter((r) => r.min > 0)
+      .sort((a, b) => b.min - a.min);
+
+    return { totalMin, rows };
+  }, [categories, investDates, day, actualBlocks, recordsByDay, secondsByDay, autoTrackCategoryId, runningElapsedSec]);
 
   const theme = useMemo(
     () =>
@@ -1468,6 +1528,66 @@ function fmtMin(min: number) {
 
       <div style={{ marginTop: 16, fontSize: 13, color: theme.muted }}>
         격자에서 드래그해서 5분 칸 단위로 체크해봐
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          border: `1px solid ${theme.border}`,
+          borderRadius: 12,
+          background: theme.card,
+          padding: 12,
+          display: "grid",
+          gap: 10,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontWeight: 700 }}>과목별 투자 비율</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { key: "day", label: "하루" },
+              { key: "week", label: "일주일" },
+              { key: "month", label: "한 달" },
+            ].map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setInvestRange(opt.key as "day" | "week" | "month")}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: `1px solid ${theme.border}`,
+                  background: investRange === opt.key ? theme.controlActiveBg : theme.controlBg,
+                  color: investRange === opt.key ? theme.controlActiveText : theme.controlText,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {investSummary.totalMin <= 0 ? (
+          <div style={{ fontSize: 12, color: theme.muted }}>선택한 기간에 기록이 없어.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {investSummary.rows.map((row) => (
+              <div key={row.id} style={{ display: "grid", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: row.color, display: "inline-block" }} />
+                    <span>{row.label}</span>
+                  </div>
+                  <span>{row.pct.toFixed(1)}% ({fmtMin(row.min)})</span>
+                </div>
+                <div style={{ width: "100%", height: 8, borderRadius: 999, background: theme.cardSoft, overflow: "hidden" }}>
+                  <div style={{ width: `${row.pct}%`, height: "100%", background: row.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 분 가늠용 헤더 */}
@@ -2072,15 +2192,14 @@ function fmtMin(min: number) {
         {/* RIGHT: 그래프 영역 */}
         <div
           style={{
-            flex: isNarrow ? "1 1 auto" : "1 1 560px",
+            flex: isNarrow ? "1 1 auto" : "1 1 520px",
             minWidth: isNarrow ? 0 : 360,
-            maxWidth: isNarrow ? "100%" : 560,
+            maxWidth: isNarrow ? "100%" : 520,
             width: "100%",
             display: "flex",
             flexDirection: "column",
             gap: 24,
-            position: isNarrow ? "static" : "sticky",
-            top: isNarrow ? undefined : 24,
+            position: "static",
             alignSelf: "flex-start",
           }}
         >
