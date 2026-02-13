@@ -22,7 +22,7 @@ type SlotSegment = { start: number; end: number; color: string };
 type Block = {
   id: string;
   start: number; // 0..1435 (03 기준)
-  dur: number; // 5의 배수
+  dur: number; // 분 단위 (수동 입력은 5분 단위, 자동 기록은 초단위 분수 가능)
   categoryId: string;
 };
 
@@ -68,6 +68,7 @@ function currentMin03FromMs(ms: number) {
 }
 
 function applyBlock(blocks: Block[], incoming: Omit<Block, "id"> & { id?: string }) {
+  const EPS = 1e-6;
   const newBlock: Block = { id: incoming.id ?? uuid(), ...incoming };
 
   const a0 = newBlock.start;
@@ -105,14 +106,14 @@ function applyBlock(blocks: Block[], incoming: Omit<Block, "id"> & { id?: string
   const merged: Block[] = [];
   for (const b of next) {
     const last = merged[merged.length - 1];
-    if (last && last.categoryId === b.categoryId && last.start + last.dur === b.start) {
+    if (last && last.categoryId === b.categoryId && Math.abs(last.start + last.dur - b.start) < EPS) {
       last.dur += b.dur;
     } else {
       merged.push({ ...b });
     }
   }
 
-  return merged.filter((b) => b.dur >= 5);
+  return merged.filter((b) => b.dur > EPS);
 }
 
 function snapIndexFromPoint(clientY: number, clientX: number, top: number, left: number) {
@@ -891,23 +892,10 @@ function fmtMin(min: number) {
     const flushSec = Math.max(runningElapsedSec, liveElapsedSec);
 
     if (flush && targetCategoryId && flushSec > 0) {
-      setSecondsByDay((prev) => {
-        const dayMap = prev[targetDay] ?? {};
-        return {
-          ...prev,
-          [targetDay]: {
-            ...dayMap,
-            [targetCategoryId]: (dayMap[targetCategoryId] ?? 0) + flushSec,
-          },
-        };
-      });
-
       if (startedAt != null) {
-        const startRaw = clamp(Math.floor(min03FromMsForDay(targetDay, startedAt)), 0, 1439);
-        const endRaw = clamp(Math.ceil(min03FromMsForDay(targetDay, endedAt)), 0, 1440);
-        const startMin = clamp(Math.floor(startRaw / 5) * 5, 0, 1435);
-        const endMin = clamp(Math.ceil(endRaw / 5) * 5, 5, 1440);
-        const dur = Math.max(5, endMin - startMin);
+        const startMin = clamp(min03FromMsForDay(targetDay, startedAt), 0, 1439.9999);
+        const endMin = clamp(min03FromMsForDay(targetDay, endedAt), 0, 1440);
+        const dur = Math.max(1 / 60, endMin - startMin);
         const timerBlock: Block = {
           id: uuid(),
           start: startMin,
