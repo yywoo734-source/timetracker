@@ -2260,15 +2260,17 @@ function fmtMin(min: number) {
               const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
 
               return (
-                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "visible" }}>
+                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "hidden" }}>
                   <svg
-                    width={W}
+                    width={isNarrow ? W : "100%"}
                     height={H}
-                    style={{ display: "block", minWidth: W }}
+                    viewBox={`0 0 ${W} ${H}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{ display: "block", minWidth: isNarrow ? W : undefined }}
                     onMouseLeave={() => setHoverIndex(null)}
                     onMouseMove={(e) => {
                       const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-                      const mx = e.clientX - rect.left;
+                      const mx = ((e.clientX - rect.left) / rect.width) * W;
                       if (mx < padL || mx > W - padR) return;
 
                       const idx = Math.round((mx - padL) / (xStep || 1));
@@ -2364,7 +2366,7 @@ function fmtMin(min: number) {
                   style={{
                     marginTop: 14,
                     position: "relative",
-                    overflowX: isNarrow ? "auto" : "visible",
+                    overflowX: isNarrow ? "auto" : "hidden",
                   }}
                 >
                   {/* 범례(카테고리 칩) */}
@@ -2406,12 +2408,14 @@ function fmtMin(min: number) {
                   </div>
 
                   <svg
-                    width={W}
+                    width={isNarrow ? W : "100%"}
                     height={H}
+                    viewBox={`0 0 ${W} ${H}`}
+                    preserveAspectRatio="xMidYMid meet"
                     onMouseLeave={() => setHoverIndex(null)}
                     onMouseMove={(e) => {
                       const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-                      const mx = e.clientX - rect.left;
+                      const mx = ((e.clientX - rect.left) / rect.width) * W;
                       if (mx < padL || mx > W - padR) return;
 
                       const idx = Math.round((mx - padL) / (xStep || 1));
