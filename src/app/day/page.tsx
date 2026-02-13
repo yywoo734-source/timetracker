@@ -56,6 +56,12 @@ function normalizeRange(a: number, b: number) {
   return { start, dur };
 }
 
+function currentMin03FromMs(ms: number) {
+  const d = new Date(ms);
+  const mins = d.getHours() * 60 + d.getMinutes();
+  return (mins - START_OFFSET_MIN + 1440) % 1440;
+}
+
 function applyBlock(blocks: Block[], incoming: Omit<Block, "id"> & { id?: string }) {
   const newBlock: Block = { id: incoming.id ?? uuid(), ...incoming };
 
@@ -589,6 +595,27 @@ export default function DayPage() {
     }
     return arr;
   }, [actualBlocks, colorById]);
+
+  const liveTrackVisual = useMemo(() => {
+    if (!autoTrackCategoryId || autoTrackStartedAtMs == null || !isToday) return null;
+
+    const startMin = currentMin03FromMs(autoTrackStartedAtMs);
+    const nowMinPrecise = currentMin03FromMs(autoTrackNowMs);
+    const durMin = Math.max(0, (autoTrackNowMs - autoTrackStartedAtMs) / 60000);
+
+    // day 경계 넘어가면 자동중지가 우선이므로 여기서는 같은 날짜 범위만 시각화
+    const safeStart = clamp(startMin, 0, 1439);
+    const safeNow = clamp(nowMinPrecise, safeStart, 1439);
+
+    const startSlot = Math.floor(safeStart / 5);
+    const endSlot = Math.max(startSlot + 1, Math.ceil((safeStart + durMin) / 5));
+    const currentSlot = Math.floor(safeNow / 5);
+    const withinSlotMin = safeNow % 5;
+    const progress = clamp(withinSlotMin / 5, 0.08, 1);
+    const color = colorById[autoTrackCategoryId] ?? "#2563eb";
+
+    return { startSlot, endSlot, currentSlot, progress, color };
+  }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs, isToday, colorById]);
 
   const selSlots = useMemo(() => {
     if (!selection) return null;
@@ -1555,6 +1582,22 @@ function fmtMin(min: number) {
               >
                 {filled.map((v, i) => {
                   const isSelected = selSlots ? i >= selSlots.s && i < selSlots.e : false;
+                  const col = i % COLS;
+                  const isHalfHourLine = col === 5;
+                  const isLiveSlot =
+                    !!liveTrackVisual && i >= liveTrackVisual.startSlot && i < liveTrackVisual.endSlot;
+                  const isLiveCurrent = !!liveTrackVisual && i === liveTrackVisual.currentSlot;
+
+                  let background = isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent";
+                  if (!isSelected && isLiveSlot) {
+                    if (isLiveCurrent) {
+                      const pct = Math.round((liveTrackVisual?.progress ?? 0) * 100);
+                      background = `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${theme.card} ${pct}%)`;
+                    } else if (!v) {
+                      background = `${liveTrackVisual?.color ?? "#2563eb"}66`;
+                    }
+                  }
+
                   return (
                     <div
                       key={i}
@@ -1562,9 +1605,11 @@ function fmtMin(min: number) {
                         width: CELL,
                         height: CELL,
                         boxSizing: "border-box",
-                        borderRight: `1px solid ${theme.borderSubtle}`,
+                        borderRight: isHalfHourLine
+                          ? `2px solid ${theme.border}`
+                          : `1px solid ${theme.borderSubtle}`,
                         borderBottom: `1px solid ${theme.borderSubtle}`,
-                        background: isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent",
+                        background,
                       }}
                       title={labelFromIndex03(i * 5)}
                       onClick={(e) => {
