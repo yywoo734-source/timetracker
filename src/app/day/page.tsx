@@ -850,9 +850,11 @@ function fmtMin(min: number) {
       });
 
       if (startedAt != null) {
-        const startMin = clamp(Math.floor(min03FromMsForDay(targetDay, startedAt)), 0, 1439);
-        const endMin = clamp(Math.ceil(min03FromMsForDay(targetDay, endedAt)), 0, 1440);
-        const dur = Math.max(1, endMin - startMin);
+        const startRaw = clamp(Math.floor(min03FromMsForDay(targetDay, startedAt)), 0, 1439);
+        const endRaw = clamp(Math.ceil(min03FromMsForDay(targetDay, endedAt)), 0, 1440);
+        const startMin = clamp(Math.floor(startRaw / 5) * 5, 0, 1435);
+        const endMin = clamp(Math.ceil(endRaw / 5) * 5, 5, 1440);
+        const dur = Math.max(5, endMin - startMin);
         const timerBlock: Block = {
           id: uuid(),
           start: startMin,
