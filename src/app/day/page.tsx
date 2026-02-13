@@ -638,6 +638,17 @@ export default function DayPage() {
     });
   }, [categories]);
 
+  useEffect(() => {
+    const validIds = new Set(actualBlocks.map((b) => b.id));
+    setNotesByBlock((prev) => {
+      const next: Record<string, string> = {};
+      for (const [id, note] of Object.entries(prev)) {
+        if (validIds.has(id)) next[id] = note;
+      }
+      return next;
+    });
+  }, [actualBlocks]);
+
   // ✅ 최근 N일 변화 추이(7/14/30) + 범례 토글 + hover 툴팁
   const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
