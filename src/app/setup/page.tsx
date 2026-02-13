@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Category = { id: string; label: string; color: string };
 
@@ -31,23 +32,85 @@ export default function SetupPage() {
   const router = useRouter();
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const existing = loadCategories();
-    if (existing.length > 0) {
-      setCategories(existing);
-    } else {
-      // 첫 진입 기본값(원하면 지워도 됨)
-      setCategories([
-        { id: uuid(), label: "공부", color: "#4f46e5" },
-        { id: uuid(), label: "일", color: "#0284c7" },
-        { id: uuid(), label: "운동", color: "#16a34a" },
-        { id: uuid(), label: "휴식", color: "#f59e0b" },
-        { id: uuid(), label: "이동", color: "#6b7280" },
-      ]);
+    let cancelled = false;
+
+    async function init() {
+      const local = loadCategories();
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token ?? null;
+        if (!cancelled) setAccessToken(token);
+
+        if (!token) {
+          if (!cancelled) {
+            setCategories(
+              local.length > 0
+                ? local
+                : [
+                    { id: uuid(), label: "공부", color: "#4f46e5" },
+                    { id: uuid(), label: "일", color: "#0284c7" },
+                    { id: uuid(), label: "운동", color: "#16a34a" },
+                    { id: uuid(), label: "휴식", color: "#f59e0b" },
+                    { id: uuid(), label: "이동", color: "#6b7280" },
+                  ]
+            );
+            setLoaded(true);
+          }
+          return;
+        }
+
+        const res = await fetch("/api/categories", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = res.ok ? await res.json() : null;
+        const remote = Array.isArray(body?.categories)
+          ? (body.categories as Category[]).filter((c) => c?.id && c?.label && c?.color)
+          : [];
+
+        if (!cancelled) {
+          if (remote.length > 0) {
+            setCategories(remote);
+            saveCategories(remote);
+          } else if (local.length > 0) {
+            setCategories(local);
+          } else {
+            setCategories([
+              { id: uuid(), label: "공부", color: "#4f46e5" },
+              { id: uuid(), label: "일", color: "#0284c7" },
+              { id: uuid(), label: "운동", color: "#16a34a" },
+              { id: uuid(), label: "휴식", color: "#f59e0b" },
+              { id: uuid(), label: "이동", color: "#6b7280" },
+            ]);
+          }
+          setLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setCategories(
+            local.length > 0
+              ? local
+              : [
+                  { id: uuid(), label: "공부", color: "#4f46e5" },
+                  { id: uuid(), label: "일", color: "#0284c7" },
+                  { id: uuid(), label: "운동", color: "#16a34a" },
+                  { id: uuid(), label: "휴식", color: "#f59e0b" },
+                  { id: uuid(), label: "이동", color: "#6b7280" },
+                ]
+          );
+          setLoaded(true);
+        }
+      }
     }
-    setLoaded(true);
+
+    init();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const canSave = useMemo(() => {
@@ -72,12 +135,28 @@ export default function SetupPage() {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
-  function onSave() {
+  async function onSave() {
     const cleaned = categories.map((c) => ({
       ...c,
       label: c.label.trim(),
     }));
     saveCategories(cleaned);
+
+    if (accessToken) {
+      try {
+        await fetch("/api/categories", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ categories: cleaned }),
+        });
+      } catch {
+        // local 저장은 이미 완료했으므로 이동은 유지
+      }
+    }
+
     router.push("/day");
   }
 

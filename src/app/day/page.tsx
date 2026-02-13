@@ -269,6 +269,7 @@ export default function DayPage() {
 
   // ✅ categories는 setup에서 로드
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesReady, setCategoriesReady] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
 
   // ✅ 날짜별 기록
@@ -502,12 +503,76 @@ export default function DayPage() {
     return () => window.clearInterval(id);
   }, [autoTrackCategoryId]);
 
-  // ✅ 카테고리 로드
+  // ✅ 카테고리 로드 (서버 우선, 로컬 fallback)
   useEffect(() => {
-    const loaded = loadCategories();
-    setCategories(loaded);
-    if (loaded.length > 0) setActiveCategoryId(loaded[0].id);
-  }, []);
+    let cancelled = false;
+
+    async function load() {
+      const local = loadCategories();
+
+      if (!accessToken) {
+        if (!cancelled) {
+          setCategories(local);
+          setActiveCategoryId((prev) => prev || local[0]?.id || "");
+          setCategoriesReady(true);
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/categories", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const body = res.ok ? await res.json() : null;
+        const remote = Array.isArray(body?.categories)
+          ? (body.categories as Category[]).filter((c) => c?.id && c?.label && c?.color)
+          : [];
+
+        const resolved = remote.length > 0 ? remote : local;
+        if (!cancelled) {
+          setCategories(resolved);
+          setActiveCategoryId((prev) => prev || resolved[0]?.id || "");
+          setCategoriesReady(true);
+        }
+
+        if (remote.length === 0 && local.length > 0) {
+          await fetch("/api/categories", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ categories: local }),
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setCategories(local);
+          setActiveCategoryId((prev) => prev || local[0]?.id || "");
+          setCategoriesReady(true);
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+  }, [categories]);
+
+  useEffect(() => {
+    if (categories.length === 0) {
+      setActiveCategoryId("");
+      return;
+    }
+    if (!categories.some((c) => c.id === activeCategoryId)) {
+      setActiveCategoryId(categories[0].id);
+    }
+  }, [categories, activeCategoryId]);
   // Undo/Redo 안정성: refs + stable callbacks
   const actualBlocksRef = useRef<Block[]>([]);
   useEffect(() => {
@@ -1196,7 +1261,7 @@ function fmtMin(min: number) {
     isErasingRef.current = false;
   }
 
-  if (!authReady) {
+  if (!authReady || !categoriesReady) {
     return (
       <div style={{ maxWidth: 520, margin: "64px auto", padding: 24, color: theme.text }}>
         로딩 중...
