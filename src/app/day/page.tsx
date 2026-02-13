@@ -794,19 +794,22 @@ function fmtMin(min: number) {
     () =>
       themeMode === "dark"
         ? {
-            bg: "#090f1c",
-            card: "#111827",
-            cardSoft: "#0b1220",
-            text: "#e5e7eb",
-            muted: "#94a3b8",
-            border: "#334155",
-            borderSubtle: "#1f2937",
-            controlBg: "#0f172a",
-            controlActiveBg: "#2563eb",
+            bg: "radial-gradient(1200px 680px at 12% -10%, #111319 0%, #060708 34%, #000000 72%)",
+            card: "#0b0b0d",
+            cardSoft: "#111216",
+            text: "#f4f4f5",
+            muted: "#a1a1aa",
+            border: "#27272a",
+            borderSubtle: "#18181b",
+            controlBg: "#121217",
+            controlActiveBg: "#0ea5e9",
             controlActiveText: "#ffffff",
-            controlText: "#e5e7eb",
-            axis: "#64748b",
-            grid: "#1e293b",
+            controlText: "#f4f4f5",
+            axis: "#71717a",
+            grid: "#1f2025",
+            panelShadow: "0 12px 40px rgba(0,0,0,0.45)",
+            buttonShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 6px 20px rgba(0,0,0,0.28)",
+            surfaceGlow: "0 0 0 1px rgba(255,255,255,0.02)",
           }
         : {
             bg: "#f7f8fb",
@@ -822,6 +825,9 @@ function fmtMin(min: number) {
             controlText: "#111827",
             axis: "#6b7280",
             grid: "#f3f4f6",
+            panelShadow: "0 8px 24px rgba(15,23,42,0.06)",
+            buttonShadow: "none",
+            surfaceGlow: "none",
           },
     [themeMode]
   );
@@ -1083,8 +1089,20 @@ function fmtMin(min: number) {
         minHeight: "100vh",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
-        <h1 style={{ margin: 0 }}>TimeTracker</h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: isNarrow ? "wrap" : "nowrap",
+          padding: isNarrow ? "10px 10px" : "12px 14px",
+          borderRadius: 14,
+          border: `1px solid ${theme.border}`,
+          background: theme.card,
+          boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
+        }}
+      >
+        <h1 style={{ margin: 0, fontWeight: 800, letterSpacing: "-0.02em" }}>TimeTracker</h1>
         <div
           style={{
             fontSize: 13,
@@ -1105,6 +1123,7 @@ function fmtMin(min: number) {
             color: theme.controlText,
             cursor: "pointer",
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           {themeMode === "dark" ? "Light" : "Dark"}
@@ -1119,6 +1138,7 @@ function fmtMin(min: number) {
             color: themeMode === "dark" ? "#fca5a5" : "#b91c1c",
             cursor: "pointer",
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           기록 전체 삭제
@@ -1133,6 +1153,7 @@ function fmtMin(min: number) {
             color: themeMode === "dark" ? "#fde68a" : "#92400e",
             cursor: "pointer",
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           오늘(선택일) 삭제
@@ -1168,6 +1189,7 @@ function fmtMin(min: number) {
             color: theme.controlText,
             cursor: "pointer",
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           설정
@@ -1184,6 +1206,7 @@ function fmtMin(min: number) {
                 color: theme.controlActiveText,
                 cursor: "pointer",
                 fontSize: 13,
+                boxShadow: theme.buttonShadow,
               }}
             >
               관리자 승인/할당
@@ -1198,6 +1221,7 @@ function fmtMin(min: number) {
                 color: theme.controlText,
                 cursor: "pointer",
                 fontSize: 13,
+                boxShadow: theme.buttonShadow,
               }}
             >
               학생 기록 보기
@@ -1234,6 +1258,7 @@ function fmtMin(min: number) {
           border: `1px solid ${theme.border}`,
           borderRadius: 12,
           background: theme.cardSoft,
+          boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
           display: "flex",
           gap: 12,
           flexWrap: "wrap",
@@ -1265,6 +1290,7 @@ function fmtMin(min: number) {
               border: `1px solid ${autoTrackCategoryId === c.id ? c.color : theme.border}`,
               color: autoTrackCategoryId === c.id ? "#fff" : theme.text,
               cursor: "pointer",
+              boxShadow: theme.buttonShadow,
             }}
             title={
               autoTrackCategoryId === c.id
@@ -1304,6 +1330,7 @@ function fmtMin(min: number) {
               color: activeCategoryId === cat.id ? "#fff" : theme.controlText,
               cursor: "pointer",
               fontSize: 13,
+              boxShadow: theme.buttonShadow,
             }}
           >
             {cat.label}
@@ -1324,6 +1351,7 @@ function fmtMin(min: number) {
             cursor: history.length === 0 ? "not-allowed" : "pointer",
             opacity: history.length === 0 ? 0.5 : 1,
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           이전 (Undo)
@@ -1340,6 +1368,7 @@ function fmtMin(min: number) {
             cursor: future.length === 0 ? "not-allowed" : "pointer",
             opacity: future.length === 0 ? 0.5 : 1,
             fontSize: 13,
+            boxShadow: theme.buttonShadow,
           }}
         >
           다시 (Redo)
@@ -1427,6 +1456,7 @@ function fmtMin(min: number) {
                 borderRadius: 12,
                 overflow: "hidden",
                 background: theme.card,
+                boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
                 userSelect: "none",
                 touchAction: "pinch-zoom",
               }}
