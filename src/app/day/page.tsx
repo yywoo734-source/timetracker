@@ -637,9 +637,24 @@ function fmtMin(min: number) {
     [categories, autoTrackCategoryId]
   );
 
-  const autoTrackElapsedSec = useMemo(() => {
-    return runningElapsedSec;
-  }, [runningElapsedSec]);
+  const baseSecondsByCategory = useMemo(() => {
+    const daySeconds = secondsByDay[day] ?? {};
+    const fromBlocks: Record<string, number> = {};
+    for (const b of actualBlocks) {
+      fromBlocks[b.categoryId] = (fromBlocks[b.categoryId] ?? 0) + b.dur * 60;
+    }
+
+    const merged: Record<string, number> = { ...daySeconds };
+    for (const [id, sec] of Object.entries(fromBlocks)) {
+      merged[id] = (merged[id] ?? 0) + sec;
+    }
+    return merged;
+  }, [secondsByDay, day, actualBlocks]);
+
+  const autoTrackCumulativeSec = useMemo(() => {
+    if (!autoTrackCategoryId) return 0;
+    return (baseSecondsByCategory[autoTrackCategoryId] ?? 0) + runningElapsedSec;
+  }, [autoTrackCategoryId, baseSecondsByCategory, runningElapsedSec]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1179,7 +1194,7 @@ function fmtMin(min: number) {
           합계: {fmtMin(summary.totalMin)}
           {autoTrackCategoryId && (
             <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted, fontWeight: 600 }}>
-              자동 기록: {autoTrackCategory?.label ?? "선택 과목"} · {fmtElapsed(autoTrackElapsedSec)}
+              자동 기록: {autoTrackCategory?.label ?? "선택 과목"} · 누적 {fmtElapsed(autoTrackCumulativeSec)}
             </span>
           )}
         </div>
@@ -1221,7 +1236,7 @@ function fmtMin(min: number) {
             </span>
             {autoTrackCategoryId === c.id && (
               <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>
-                + {fmtElapsed(autoTrackElapsedSec)}
+                누적 {fmtElapsed(autoTrackCumulativeSec)}
               </span>
             )}
           </button>
