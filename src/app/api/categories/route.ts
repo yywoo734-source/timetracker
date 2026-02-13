@@ -34,11 +34,65 @@ export async function GET(request: NextRequest) {
     orderBy: [{ createdAt: "asc" }],
   });
 
-  const categories = rows.map((r) => ({
-    id: r.categoryId,
-    label: r.label,
-    color: r.color ?? "#111827",
-  }));
+  if (rows.length > 0) {
+    const categories = rows.map((r) => ({
+      id: r.categoryId,
+      label: r.label,
+      color: r.color ?? "#111827",
+    }));
+
+    return NextResponse.json({ categories });
+  }
+
+  // Backfill support: if overrides table is empty, recover categories from recent day records.
+  const recentRecords = await prisma.dayRecord.findMany({
+    where: { userId: user.id },
+    orderBy: [{ day: "desc" }],
+    take: 60,
+    select: { categories: true },
+  });
+
+  const recovered = recentRecords
+    .map((r) => {
+      if (!r.categories || typeof r.categories !== "object" || Array.isArray(r.categories)) return [];
+      const maybeList = (r.categories as { list?: unknown }).list;
+      if (!Array.isArray(maybeList)) return [];
+      return maybeList
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const id = String((item as { id?: unknown }).id ?? "").trim();
+          const label = String((item as { label?: unknown }).label ?? "").trim();
+          const color = String((item as { color?: unknown }).color ?? "").trim();
+          if (!id || !label || !color) return null;
+          return { id, label, color };
+        })
+        .filter((item): item is CategoryPayload => item !== null);
+    })
+    .find((list) => list.length > 0);
+
+  const categories = recovered ?? [];
+
+  // Recovered data를 overrides로 저장해서 이후 디바이스에서 즉시 동일하게 로드되도록 보장
+  for (const c of categories) {
+    await prisma.categoryOverride.upsert({
+      where: {
+        studentId_categoryId: {
+          studentId: user.id,
+          categoryId: c.id,
+        },
+      },
+      update: {
+        label: c.label,
+        color: c.color,
+      },
+      create: {
+        studentId: user.id,
+        categoryId: c.id,
+        label: c.label,
+        color: c.color,
+      },
+    });
+  }
 
   return NextResponse.json({ categories });
 }

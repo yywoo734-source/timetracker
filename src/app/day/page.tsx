@@ -520,6 +520,7 @@ export default function DayPage() {
       }
 
       try {
+        if (!cancelled) setCategoriesReady(false);
         const res = await fetch("/api/categories", {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
