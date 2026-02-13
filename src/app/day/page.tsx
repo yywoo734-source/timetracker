@@ -158,10 +158,14 @@ function parseLocalDate(isoDate: string) {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-type DayRecord = { blocks: Block[]; notesByCategory: Record<string, string> };
+type DayRecord = {
+  blocks: Block[];
+  notesByCategory: Record<string, string>;
+  secondsByCategory: Record<string, number>;
+};
 type ThemeMode = "light" | "dark";
 
-const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {} };
+const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {}, secondsByCategory: {} };
 const THEME_KEY = "timetracker_theme_mode_v1";
 
 function fmtDayLabel(isoDate: string) {
@@ -179,6 +183,7 @@ export default function DayPage() {
   const [authReady, setAuthReady] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [recordsByDay, setRecordsByDay] = useState<Record<string, DayRecord>>({});
+  const [secondsByDay, setSecondsByDay] = useState<Record<string, Record<string, number>>>({});
   const [showAdminLinks, setShowAdminLinks] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string>("");
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
@@ -200,6 +205,7 @@ export default function DayPage() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
   const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
+  const [autoTrackDay, setAutoTrackDay] = useState<string | null>(null);
   const autoTrackLastMinRef = useRef<number | null>(null);
   const [autoTrackStartedAtMs, setAutoTrackStartedAtMs] = useState<number | null>(null);
   const [autoTrackNowMs, setAutoTrackNowMs] = useState<number>(Date.now());
@@ -277,6 +283,11 @@ export default function DayPage() {
       setActualBlocks([]);
       setNotesByCategory({});
       setRecordsByDay({});
+      setSecondsByDay({});
+      setAutoTrackCategoryId(null);
+      setAutoTrackDay(null);
+      autoTrackLastMinRef.current = null;
+      setAutoTrackStartedAtMs(null);
       setHistory([]);
       setFuture([]);
       setSaveStatus("saved");
@@ -286,6 +297,45 @@ export default function DayPage() {
       alert("전체 삭제 중 오류가 발생했어요.");
     }
   }, [accessToken]);
+
+  const clearCurrentDayRecords = useCallback(async () => {
+    if (!confirm(`${day} 날짜 기록을 정말 삭제할까?`)) return;
+
+    if (!accessToken) {
+      alert("로그인 토큰이 없어 삭제할 수 없어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const res = await fetch(`/api/records?day=${day}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        alert("해당 날짜 삭제에 실패했어요.");
+        setSaveStatus("saved");
+        return;
+      }
+
+      setActualBlocks([]);
+      setNotesByCategory({});
+      setRecordsByDay((prev) => ({ ...prev, [day]: EMPTY_RECORD }));
+      setSecondsByDay((prev) => ({ ...prev, [day]: {} }));
+      setAutoTrackCategoryId(null);
+      setAutoTrackDay(null);
+      autoTrackLastMinRef.current = null;
+      setAutoTrackStartedAtMs(null);
+      setHistory([]);
+      setFuture([]);
+      setSaveStatus("saved");
+      alert(`${day} 기록이 삭제됐어요`);
+    } catch {
+      setSaveStatus("saved");
+      alert("날짜 삭제 중 오류가 발생했어요.");
+    }
+  }, [accessToken, day]);
 
   const isToday = day === isoDayKey03();
 
@@ -353,10 +403,8 @@ export default function DayPage() {
   useEffect(() => {
     if (isToday) return;
     if (!autoTrackCategoryId) return;
-    setAutoTrackCategoryId(null);
-    autoTrackLastMinRef.current = null;
-    setAutoTrackStartedAtMs(null);
-  }, [isToday, autoTrackCategoryId]);
+    stopAutoTrack(true);
+  }, [isToday, autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs, day]);
 
   useEffect(() => {
     if (!autoTrackCategoryId) return;
@@ -449,6 +497,7 @@ export default function DayPage() {
     if (!rec) return;
     setActualBlocks(rec.blocks);
     setNotesByCategory(rec.notesByCategory ?? {});
+    setSecondsByDay((prev) => ({ ...prev, [day]: rec.secondsByCategory ?? {} }));
     setSaveStatus("saved");
     hydratedDayRef.current = day;
     setDayReadyForSave(true);
@@ -469,14 +518,21 @@ export default function DayPage() {
           day,
           blocks: actualBlocks,
           notesByCategory,
-          categories,
+          categories: {
+            list: categories,
+            secondsByCategory: secondsByDay[day] ?? {},
+          },
         }),
       });
       if (res.ok) {
         setSaveStatus("saved");
         setRecordsByDay((prev) => ({
           ...prev,
-          [day]: { blocks: actualBlocks, notesByCategory },
+          [day]: {
+            blocks: actualBlocks,
+            notesByCategory,
+            secondsByCategory: secondsByDay[day] ?? {},
+          },
         }));
       } else {
         setSaveStatus("saved");
@@ -484,7 +540,7 @@ export default function DayPage() {
     }, 200);
 
     return () => window.clearTimeout(t);
-  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, categories, day]);
+  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, categories, secondsByDay, day]);
   // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
   useEffect(() => {
     setNotesByCategory((prev) => {
@@ -541,9 +597,10 @@ export default function DayPage() {
     return { s, e };
   }, [selection]);
 
-  function fmtMin(min: number) {
-    const h = Math.floor(min / 60);
-    const m = min % 60;
+function fmtMin(min: number) {
+  const rounded = Math.max(0, Math.round(min));
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
     if (h === 0) return `${m}m`;
     if (m === 0) return `${h}h`;
     return `${h}h ${m}m`;
@@ -557,14 +614,23 @@ export default function DayPage() {
     return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
   }
 
+  const runningElapsedSec = useMemo(() => {
+    if (!autoTrackCategoryId || autoTrackStartedAtMs == null) return 0;
+    return Math.max(0, Math.floor((autoTrackNowMs - autoTrackStartedAtMs) / 1000));
+  }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs]);
+
   // ✅ 요약(카테고리별)
   const summary = useMemo(() => {
     const totals: Record<string, number> = {};
-    for (const c of categories) totals[c.id] = 0;
+    const daySeconds = secondsByDay[day] ?? {};
+    for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
     for (const b of actualBlocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+    if (autoTrackCategoryId) {
+      totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
+    }
     const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
     return { totals, totalMin };
-  }, [actualBlocks, categories]);
+  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec]);
 
   const autoTrackCategory = useMemo(
     () => categories.find((c) => c.id === autoTrackCategoryId) ?? null,
@@ -572,9 +638,8 @@ export default function DayPage() {
   );
 
   const autoTrackElapsedSec = useMemo(() => {
-    if (!autoTrackCategoryId || autoTrackStartedAtMs == null) return 0;
-    return Math.max(0, Math.floor((autoTrackNowMs - autoTrackStartedAtMs) / 1000));
-  }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs]);
+    return runningElapsedSec;
+  }, [runningElapsedSec]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -586,10 +651,16 @@ export default function DayPage() {
           const res = await fetch(`/api/records?day=${d}`, { headers });
           if (!res.ok) return [d, EMPTY_RECORD] as const;
           const body = await res.json();
+          const rawCategories = body.record?.categories;
+          const parsedSeconds =
+            rawCategories && !Array.isArray(rawCategories)
+              ? ((rawCategories.secondsByCategory as Record<string, number> | undefined) ?? {})
+              : {};
           const record = body.record
             ? {
                 blocks: (body.record.blocks as Block[]) ?? [],
                 notesByCategory: (body.record.notes as Record<string, string>) ?? {},
+                secondsByCategory: parsedSeconds,
               }
             : EMPTY_RECORD;
           return [d, record] as const;
@@ -600,6 +671,13 @@ export default function DayPage() {
         setRecordsByDay((prev) => {
           const next = { ...prev };
           for (const [d, record] of results) next[d] = record;
+          return next;
+        });
+        setSecondsByDay((prev) => {
+          const next = { ...prev };
+          for (const [d, record] of results) {
+            next[d] = record.secondsByCategory ?? {};
+          }
           return next;
         });
       }
@@ -616,11 +694,15 @@ export default function DayPage() {
 
     for (const d of trendDates) {
       const blocks = d === day ? actualBlocks : (recordsByDay[d]?.blocks ?? []);
+      const daySeconds = secondsByDay[d] ?? {};
       const totals: Record<string, number> = {};
-      for (const c of categories) totals[c.id] = 0;
+      for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
 
       for (const b of blocks) {
         totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+      }
+      if (d === day && autoTrackCategoryId) {
+        totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
       }
 
       const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
@@ -638,7 +720,18 @@ export default function DayPage() {
 
     const maxY = Math.max(1, ...yCandidates);
     return { totalsByDay, maxY };
-  }, [trendDates, day, actualBlocks, categories, recordsByDay, hiddenCategoryIds, hiddenTotal]);
+  }, [
+    trendDates,
+    day,
+    actualBlocks,
+    categories,
+    recordsByDay,
+    secondsByDay,
+    autoTrackCategoryId,
+    runningElapsedSec,
+    hiddenCategoryIds,
+    hiddenTotal,
+  ]);
 
   const theme = useMemo(
     () =>
@@ -676,15 +769,34 @@ export default function DayPage() {
     [themeMode]
   );
 
+  function stopAutoTrack(flush = true) {
+    const targetDay = autoTrackDay ?? day;
+    if (flush && autoTrackCategoryId && runningElapsedSec > 0) {
+      setSecondsByDay((prev) => {
+        const dayMap = prev[targetDay] ?? {};
+        return {
+          ...prev,
+          [targetDay]: {
+            ...dayMap,
+            [autoTrackCategoryId]: (dayMap[autoTrackCategoryId] ?? 0) + runningElapsedSec,
+          },
+        };
+      });
+    }
+
+    setAutoTrackCategoryId(null);
+    setAutoTrackDay(null);
+    autoTrackLastMinRef.current = null;
+    setAutoTrackStartedAtMs(null);
+  }
+
   function toggleCategoryVisible(id: string) {
     setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
   function toggleAutoTrack(categoryId: string) {
     if (autoTrackCategoryId === categoryId) {
-      setAutoTrackCategoryId(null);
-      autoTrackLastMinRef.current = null;
-      setAutoTrackStartedAtMs(null);
+      stopAutoTrack(true);
       return;
     }
 
@@ -695,6 +807,7 @@ export default function DayPage() {
 
     setActiveCategoryId(categoryId);
     setAutoTrackCategoryId(categoryId);
+    setAutoTrackDay(day);
     autoTrackLastMinRef.current = getCurrentMin03();
     const nowMs = Date.now();
     setAutoTrackStartedAtMs(nowMs);
@@ -944,6 +1057,20 @@ export default function DayPage() {
           }}
         >
           기록 전체 삭제
+        </button>
+        <button
+          onClick={clearCurrentDayRecords}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: `1px solid ${themeMode === "dark" ? "#854d0e" : "#fcd34d"}`,
+            background: theme.controlBg,
+            color: themeMode === "dark" ? "#fde68a" : "#92400e",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          오늘(선택일) 삭제
         </button>
         <div
           style={{

@@ -17,7 +17,9 @@ type User = {
 type RecordPayload = {
   blocks?: Array<{ id?: string; start: number; dur: number; categoryId: string }>;
   notes?: Record<string, string>;
-  categories?: Array<{ id: string; label: string; color: string }>;
+  categories?:
+    | Array<{ id: string; label: string; color: string }>
+    | { list?: Array<{ id: string; label: string; color: string }>; secondsByCategory?: Record<string, number> };
 };
 
 type Override = { categoryId: string; label: string; color?: string | null };
@@ -209,7 +211,9 @@ export default function AdminRecordsPage() {
             const totals: Record<string, number> = {};
             for (const b of blocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
             const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
-            const categories = record.categories ?? [];
+            const categories = Array.isArray(record.categories)
+              ? record.categories
+              : record.categories?.list ?? [];
             const categoryMap = new Map(categories.map((c) => [c.id, c]));
             const hasCategoryMeta = categories.length > 0;
             const categoryIds = Array.from(

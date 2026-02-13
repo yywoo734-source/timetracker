@@ -79,9 +79,21 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const all = searchParams.get("all");
+  const day = searchParams.get("day");
 
   if (all !== "1") {
-    return NextResponse.json({ error: "all=1 required" }, { status: 400 });
+    if (!day) {
+      return NextResponse.json({ error: "all=1 or day required" }, { status: 400 });
+    }
+
+    await prisma.dayRecord.deleteMany({
+      where: {
+        userId: user.id,
+        day: dayToDate(day),
+      },
+    });
+
+    return NextResponse.json({ ok: true });
   }
 
   await prisma.dayRecord.deleteMany({
