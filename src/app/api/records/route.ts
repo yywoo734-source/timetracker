@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as {
     day: string;
     blocks: unknown;
+    notes: unknown;
     notesByCategory: unknown;
     categories: unknown;
   };
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
   if (!body.day) {
     return NextResponse.json({ error: "day required" }, { status: 400 });
   }
+
+  const notesPayload = body.notes ?? body.notesByCategory ?? {};
 
   const record = await prisma.dayRecord.upsert({
     where: {
@@ -56,14 +59,14 @@ export async function POST(request: NextRequest) {
     },
     update: {
       blocks: body.blocks ?? [],
-      notes: body.notesByCategory ?? {},
+      notes: notesPayload,
       categories: body.categories ?? {},
     },
     create: {
       userId: user.id,
       day: dayToDate(body.day),
       blocks: body.blocks ?? [],
-      notes: body.notesByCategory ?? {},
+      notes: notesPayload,
       categories: body.categories ?? {},
     },
   });

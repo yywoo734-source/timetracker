@@ -37,11 +37,24 @@ function pad2(n: number) {
 }
 
 function labelFromIndex03(idxMin: number) {
-  const realMin = (idxMin + START_OFFSET_MIN) % 1440;
+  const roundedMin = Math.floor(idxMin);
+  const realMin = (roundedMin + START_OFFSET_MIN) % 1440;
   const h = Math.floor(realMin / 60);
   const m = realMin % 60;
-  const isNextDay = idxMin + START_OFFSET_MIN >= 1440;
+  const isNextDay = roundedMin + START_OFFSET_MIN >= 1440;
   return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}`;
+}
+
+function labelFromIndex03Sec(idxMin: number) {
+  const roundedSec = Math.max(0, Math.round(idxMin * 60));
+  const realSecBase = roundedSec + START_OFFSET_MIN * 60;
+  const daySec = 24 * 60 * 60;
+  const realSec = ((realSecBase % daySec) + daySec) % daySec;
+  const h = Math.floor(realSec / 3600);
+  const m = Math.floor((realSec % 3600) / 60);
+  const s = realSec % 60;
+  const isNextDay = realSecBase >= daySec;
+  return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -215,11 +228,12 @@ function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
 type DayRecord = {
   blocks: Block[];
   notesByCategory: Record<string, string>;
+  notesByBlock: Record<string, string>;
   secondsByCategory: Record<string, number>;
 };
 type ThemeMode = "light" | "dark";
 
-const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {}, secondsByCategory: {} };
+const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {}, notesByBlock: {}, secondsByCategory: {} };
 const THEME_KEY = "timetracker_theme_mode_v1";
 
 function fmtDayLabel(isoDate: string) {
@@ -253,6 +267,8 @@ export default function DayPage() {
   const [actualBlocks, setActualBlocks] = useState<Block[]>([]);
   // ✅ 과목별 한 줄 메모 (최대 50자)
   const [notesByCategory, setNotesByCategory] = useState<Record<string, string>>({});
+  const [notesByBlock, setNotesByBlock] = useState<Record<string, string>>({});
+  const [openBlockMemoId, setOpenBlockMemoId] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
@@ -336,6 +352,7 @@ export default function DayPage() {
 
       setActualBlocks([]);
       setNotesByCategory({});
+      setNotesByBlock({});
       setRecordsByDay({});
       setSecondsByDay({});
       setAutoTrackCategoryId(null);
@@ -374,6 +391,7 @@ export default function DayPage() {
 
       setActualBlocks([]);
       setNotesByCategory({});
+      setNotesByBlock({});
       setRecordsByDay((prev) => ({ ...prev, [day]: EMPTY_RECORD }));
       setSecondsByDay((prev) => ({ ...prev, [day]: {} }));
       setAutoTrackCategoryId(null);
@@ -560,6 +578,7 @@ export default function DayPage() {
     if (!rec) return;
     setActualBlocks(rec.blocks);
     setNotesByCategory(rec.notesByCategory ?? {});
+    setNotesByBlock(rec.notesByBlock ?? {});
     setSecondsByDay((prev) => ({ ...prev, [day]: rec.secondsByCategory ?? {} }));
     setSaveStatus("saved");
     hydratedDayRef.current = day;
@@ -580,7 +599,10 @@ export default function DayPage() {
         body: JSON.stringify({
           day,
           blocks: actualBlocks,
-          notesByCategory,
+          notes: {
+            byCategory: notesByCategory,
+            byBlock: notesByBlock,
+          },
           categories: {
             list: categories,
             secondsByCategory: secondsByDay[day] ?? {},
@@ -594,6 +616,7 @@ export default function DayPage() {
           [day]: {
             blocks: actualBlocks,
             notesByCategory,
+            notesByBlock,
             secondsByCategory: secondsByDay[day] ?? {},
           },
         }));
@@ -603,7 +626,7 @@ export default function DayPage() {
     }, 200);
 
     return () => window.clearTimeout(t);
-  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, categories, secondsByDay, day]);
+  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, notesByBlock, categories, secondsByDay, day]);
   // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
   useEffect(() => {
     setNotesByCategory((prev) => {
@@ -701,6 +724,16 @@ function fmtMin(min: number) {
     return `${h}h ${m}m`;
   }
 
+  function fmtDurSec(min: number) {
+    const sec = Math.max(0, Math.round(min * 60));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
   function fmtElapsed(sec: number) {
     const s = sec % 60;
     const totalMin = Math.floor(sec / 60);
@@ -761,10 +794,23 @@ function fmtMin(min: number) {
             rawCategories && !Array.isArray(rawCategories)
               ? ((rawCategories.secondsByCategory as Record<string, number> | undefined) ?? {})
               : {};
+          const rawNotes =
+            body.record?.notes && typeof body.record.notes === "object" && !Array.isArray(body.record.notes)
+              ? (body.record.notes as Record<string, unknown>)
+              : {};
+          const byCategory =
+            rawNotes.byCategory && typeof rawNotes.byCategory === "object" && !Array.isArray(rawNotes.byCategory)
+              ? (rawNotes.byCategory as Record<string, string>)
+              : ((body.record?.notes as Record<string, string>) ?? {});
+          const byBlock =
+            rawNotes.byBlock && typeof rawNotes.byBlock === "object" && !Array.isArray(rawNotes.byBlock)
+              ? (rawNotes.byBlock as Record<string, string>)
+              : {};
           const record = body.record
             ? {
                 blocks: (body.record.blocks as Block[]) ?? [],
-                notesByCategory: (body.record.notes as Record<string, string>) ?? {},
+                notesByCategory: byCategory,
+                notesByBlock: byBlock,
                 secondsByCategory: parsedSeconds,
               }
             : EMPTY_RECORD;
@@ -914,6 +960,7 @@ function fmtMin(min: number) {
                 ...existing,
                 blocks: applyBlock(existing.blocks, timerBlock),
                 notesByCategory: existing.notesByCategory ?? {},
+                notesByBlock: existing.notesByBlock ?? {},
                 secondsByCategory: existing.secondsByCategory ?? {},
               },
             };
@@ -1920,49 +1967,89 @@ function fmtMin(min: number) {
                   .sort((a, b) => a.start - b.start)
                   .map((b) => {
                     const cat = categories.find((c) => c.id === b.categoryId);
-                    const start = labelFromIndex03(b.start);
-                    const end = labelFromIndex03(b.start + b.dur);
+                    const start = labelFromIndex03Sec(b.start);
+                    const end = labelFromIndex03Sec(b.start + b.dur);
+                    const blockNote = notesByBlock[b.id] ?? "";
                     return (
                       <div
                         key={b.id}
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          padding: "8px 6px",
+                          display: "grid",
+                          gap: 8,
+                          padding: "10px 8px",
                           borderRadius: 10,
+                          border: `1px solid ${theme.borderSubtle}`,
+                          background: theme.cardSoft,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 999,
-                              background: cat?.color ?? "#111827",
-                              display: "inline-block",
-                            }}
-                          />
-                          <div style={{ display: "flex", flexDirection: "column" }}>
-                            <div style={{ fontSize: 12, fontWeight: 800, color: theme.text }}>
-                              {cat?.label ?? "(알 수 없음)"}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: 999,
+                                background: cat?.color ?? "#111827",
+                                display: "inline-block",
+                              }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: theme.text }}>
+                                {cat?.label ?? "(알 수 없음)"}
+                              </div>
+                              <div style={{ fontSize: 12, color: theme.muted }}>
+                                {start} ~ {end}
+                              </div>
+                              {(() => {
+                                const note = (notesByCategory[b.categoryId] ?? "").trim();
+                                if (!note) return null;
+                                return (
+                                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                    <span style={{ fontWeight: 800, opacity: 0.9 }}>과목 메모:</span> {note}
+                                  </div>
+                                );
+                              })()}
                             </div>
-                            <div style={{ fontSize: 12, color: theme.muted }}>
-                              {start} ~ {end}
-                            </div>
-                            {(() => {
-                              const note = (notesByCategory[b.categoryId] ?? "").trim();
-                              if (!note) return null;
-                              return (
-                                <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                  <span style={{ fontWeight: 800, opacity: 0.9 }}>메모:</span> {note}
-                                </div>
-                              );
-                            })()}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtDurSec(b.dur)}</div>
+                            <button
+                              onClick={() => setOpenBlockMemoId((prev) => (prev === b.id ? null : b.id))}
+                              style={{
+                                padding: "4px 8px",
+                                borderRadius: 8,
+                                border: `1px solid ${theme.border}`,
+                                background: theme.controlBg,
+                                color: theme.controlText,
+                                cursor: "pointer",
+                                fontSize: 11,
+                              }}
+                            >
+                              {openBlockMemoId === b.id ? "메모 닫기" : "메모"}
+                            </button>
                           </div>
                         </div>
-                        <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtMin(b.dur)}</div>
+                        {openBlockMemoId === b.id && (
+                          <input
+                            value={blockNote}
+                            maxLength={120}
+                            placeholder="이 타임로그에서 한 내용 메모"
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setNotesByBlock((prev) => ({ ...prev, [b.id]: v }));
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: `1px solid ${theme.border}`,
+                              background: theme.card,
+                              color: theme.text,
+                              fontSize: 12,
+                              outline: "none",
+                            }}
+                          />
+                        )}
                       </div>
                     );
                   })

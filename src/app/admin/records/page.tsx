@@ -16,7 +16,7 @@ type User = {
 
 type RecordPayload = {
   blocks?: Array<{ id?: string; start: number; dur: number; categoryId: string }>;
-  notes?: Record<string, string>;
+  notes?: unknown;
   categories?:
     | Array<{ id: string; label: string; color: string }>
     | { list?: Array<{ id: string; label: string; color: string }>; secondsByCategory?: Record<string, number> };
@@ -30,19 +30,25 @@ function pad2(n: number) {
 
 function labelFromIndex03(idxMin: number) {
   const START_OFFSET_MIN = 180;
-  const realMin = (idxMin + START_OFFSET_MIN) % 1440;
-  const h = Math.floor(realMin / 60);
-  const m = realMin % 60;
-  const isNextDay = idxMin + START_OFFSET_MIN >= 1440;
-  return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}`;
+  const roundedSec = Math.max(0, Math.round(idxMin * 60));
+  const baseSec = roundedSec + START_OFFSET_MIN * 60;
+  const daySec = 24 * 60 * 60;
+  const realSec = ((baseSec % daySec) + daySec) % daySec;
+  const h = Math.floor(realSec / 3600);
+  const m = Math.floor((realSec % 3600) / 60);
+  const s = realSec % 60;
+  const isNextDay = baseSec >= daySec;
+  return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
 function fmtDur(min: number) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h === 0) return `${m}분`;
-  if (m === 0) return `${h}시간`;
-  return `${h}시간 ${m}분`;
+  const sec = Math.max(0, Math.round(min * 60));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h === 0 && m === 0) return `${s}초`;
+  if (h === 0) return `${m}분 ${s}초`;
+  return `${h}시간 ${m}분 ${s}초`;
 }
 
 export default function AdminRecordsPage() {
@@ -207,7 +213,18 @@ export default function AdminRecordsPage() {
         ) : (
           (() => {
             const blocks = record.blocks ?? [];
-            const notes = record.notes ?? {};
+            const rawNotes =
+              record.notes && typeof record.notes === "object" && !Array.isArray(record.notes)
+                ? (record.notes as Record<string, unknown>)
+                : {};
+            const notesByCategory =
+              rawNotes.byCategory && typeof rawNotes.byCategory === "object" && !Array.isArray(rawNotes.byCategory)
+                ? (rawNotes.byCategory as Record<string, string>)
+                : ((record.notes as Record<string, string>) ?? {});
+            const notesByBlock =
+              rawNotes.byBlock && typeof rawNotes.byBlock === "object" && !Array.isArray(rawNotes.byBlock)
+                ? (rawNotes.byBlock as Record<string, string>)
+                : {};
             const totals: Record<string, number> = {};
             for (const b of blocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
             const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
@@ -219,7 +236,7 @@ export default function AdminRecordsPage() {
             const categoryIds = Array.from(
               new Set([
                 ...blocks.map((b) => b.categoryId),
-                ...Object.keys(notes ?? {}),
+                ...Object.keys(notesByCategory ?? {}),
                 ...categories.map((c) => c.id),
               ])
             );
@@ -257,11 +274,12 @@ export default function AdminRecordsPage() {
                           <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>끝</th>
                           <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>시간</th>
                           <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>카테고리</th>
+                          <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>타임로그 메모</th>
                         </tr>
                       </thead>
                       <tbody>
                         {blocks.map((b) => (
-                          <tr key={`${b.categoryId}-${b.start}-${b.dur}`}>
+                          <tr key={b.id ?? `${b.categoryId}-${b.start}-${b.dur}`}>
                             <td style={{ padding: "6px", borderBottom: "1px solid #f1f1f1" }}>
                               {labelFromIndex03(b.start)}
                             </td>
@@ -289,6 +307,9 @@ export default function AdminRecordsPage() {
                                   </span>
                                 );
                               })()}
+                            </td>
+                            <td style={{ padding: "6px", borderBottom: "1px solid #f1f1f1" }}>
+                              {(b.id ? notesByBlock[b.id] : "") || "-"}
                             </td>
                           </tr>
                         ))}
@@ -341,7 +362,7 @@ export default function AdminRecordsPage() {
 
                 <div>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>메모</div>
-                  {Object.keys(notes).length === 0 ? (
+                  {Object.keys(notesByCategory).length === 0 ? (
                     <div style={{ color: "#666" }}>메모 없음</div>
                   ) : (
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -352,7 +373,7 @@ export default function AdminRecordsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(notes).map(([id, note]) => {
+                        {Object.entries(notesByCategory).map(([id, note]) => {
                           const c = displayCategory(id);
                           return (
                           <tr key={id}>
