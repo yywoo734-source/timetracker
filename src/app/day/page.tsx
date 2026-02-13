@@ -1099,7 +1099,6 @@ function fmtMin(min: number) {
           borderRadius: 14,
           border: `1px solid ${theme.border}`,
           background: theme.card,
-          boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
         }}
       >
         <h1 style={{ margin: 0, fontWeight: 800, letterSpacing: "-0.02em" }}>TimeTracker</h1>
@@ -1258,7 +1257,6 @@ function fmtMin(min: number) {
           border: `1px solid ${theme.border}`,
           borderRadius: 12,
           background: theme.cardSoft,
-          boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
           display: "flex",
           gap: 12,
           flexWrap: "wrap",
