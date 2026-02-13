@@ -725,6 +725,7 @@ export default function DayPage() {
 
   // ✅ 최근 N일 변화 추이(7/14/30) + 범례 토글 + hover 툴팁
   const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
+  const [totalTrendMode, setTotalTrendMode] = useState<"total" | "selected">("total");
   const [investRange, setInvestRange] = useState<"day" | "week" | "month">("day");
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
@@ -2282,7 +2283,43 @@ function fmtMin(min: number) {
               padding: 16,
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: 16 }}>총 공부시간 추이</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>
+                {totalTrendMode === "selected" && categories.find((c) => c.id === activeCategoryId)
+                  ? `${categories.find((c) => c.id === activeCategoryId)?.label} 추이`
+                  : "총 공부시간 추이"}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setTotalTrendMode("total")}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: totalTrendMode === "total" ? theme.controlActiveBg : theme.controlBg,
+                    color: totalTrendMode === "total" ? theme.controlActiveText : theme.controlText,
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  전체
+                </button>
+                <button
+                  onClick={() => setTotalTrendMode("selected")}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: totalTrendMode === "selected" ? theme.controlActiveBg : theme.controlBg,
+                    color: totalTrendMode === "selected" ? theme.controlActiveText : theme.controlText,
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  선택 과목만
+                </button>
+              </div>
+            </div>
 
             {/* 기간 선택 */}
             <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
@@ -2317,13 +2354,19 @@ function fmtMin(min: number) {
 
               const days = trend.totalsByDay;
               const n = days.length;
-              const yMax = Math.max(1, ...days.map((d) => d.totalMin));
+              const selectedCategory = categories.find((c) => c.id === activeCategoryId);
+              const values = days.map((d) =>
+                totalTrendMode === "selected" && selectedCategory
+                  ? (d.totals[selectedCategory.id] ?? 0)
+                  : d.totalMin
+              );
+              const yMax = Math.max(1, ...values);
 
               const xStep = n <= 1 ? 0 : innerW / (n - 1);
               const xAt = (i: number) => padL + i * xStep;
               const y = (v: number) => padT + innerH - (v / yMax) * innerH;
 
-              const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
+              const points = values.map((v, i) => `${xAt(i)},${y(v)}`).join(" ");
 
               return (
                 <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "hidden" }}>
@@ -2358,8 +2401,8 @@ function fmtMin(min: number) {
 
                   <polyline points={points} fill="none" stroke={theme.text} strokeWidth={3} />
 
-                  {days.map((d, i) => (
-                    <circle key={i} cx={xAt(i)} cy={y(d.totalMin)} r={4} fill={theme.text} />
+                  {values.map((v, i) => (
+                    <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
                   ))}
 
                   {hoverIndex != null && (
