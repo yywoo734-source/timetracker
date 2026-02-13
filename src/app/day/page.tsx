@@ -2192,9 +2192,9 @@ function fmtMin(min: number) {
         {/* RIGHT: 그래프 영역 */}
         <div
           style={{
-            flex: isNarrow ? "1 1 auto" : "1 1 520px",
+            flex: isNarrow ? "1 1 auto" : "1 1 640px",
             minWidth: isNarrow ? 0 : 360,
-            maxWidth: isNarrow ? "100%" : 520,
+            maxWidth: "100%",
             width: "100%",
             display: "flex",
             flexDirection: "column",
