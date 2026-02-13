@@ -16,6 +16,7 @@ const GRID_W = COLS * CELL;
 const GRID_H = ROWS * CELL;
 
 type Category = { id: string; label: string; color: string };
+type SlotSegment = { start: number; end: number; color: string };
 
 // ✅ 앞으로 기록은 categoryId로 저장 (라벨 변경해도 기록 유지)
 type Block = {
@@ -172,6 +173,42 @@ function min03FromMsForDay(dayIso: string, ms: number) {
   const dayStart = parseLocalDate(dayIso);
   dayStart.setHours(3, 0, 0, 0);
   return (ms - dayStart.getTime()) / 60000;
+}
+
+function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
+  if (segments.length === 0) return "transparent";
+
+  const sorted = [...segments]
+    .map((seg) => ({
+      start: clamp(seg.start, 0, 5),
+      end: clamp(seg.end, 0, 5),
+      color: seg.color,
+    }))
+    .filter((seg) => seg.end > seg.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (sorted.length === 0) return "transparent";
+
+  const stops: string[] = [];
+  let cursor = 0;
+
+  for (const seg of sorted) {
+    const startPct = (seg.start / 5) * 100;
+    const endPct = (seg.end / 5) * 100;
+
+    if (startPct > cursor) {
+      stops.push(`${baseColor} ${cursor}%`, `${baseColor} ${startPct}%`);
+    }
+
+    stops.push(`${seg.color} ${startPct}%`, `${seg.color} ${endPct}%`);
+    cursor = endPct;
+  }
+
+  if (cursor < 100) {
+    stops.push(`${baseColor} ${cursor}%`, `${baseColor} 100%`);
+  }
+
+  return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
 type DayRecord = {
@@ -604,13 +641,28 @@ export default function DayPage() {
     return map;
   }, [categories]);
 
-  const filled = useMemo(() => {
-    const arr = Array<string | null>(SLOTS).fill(null);
+  const slotSegments = useMemo(() => {
+    const arr: SlotSegment[][] = Array.from({ length: SLOTS }, () => []);
     for (const b of actualBlocks) {
-      const s = Math.floor(b.start / 5);
-      const e = Math.floor((b.start + b.dur) / 5);
       const color = colorById[b.categoryId] ?? "#111827";
-      for (let i = s; i < e && i < SLOTS; i++) arr[i] = color;
+      const blockStart = b.start;
+      const blockEnd = b.start + b.dur;
+      const slotStart = Math.floor(blockStart / 5);
+      const slotEnd = Math.ceil(blockEnd / 5);
+
+      for (let i = slotStart; i < slotEnd && i < SLOTS; i++) {
+        const s0 = i * 5;
+        const s1 = s0 + 5;
+        const overlapStart = Math.max(s0, blockStart);
+        const overlapEnd = Math.min(s1, blockEnd);
+        if (overlapEnd > overlapStart) {
+          arr[i].push({
+            start: overlapStart - s0,
+            end: overlapEnd - s0,
+            color,
+          });
+        }
+      }
     }
     return arr;
   }, [actualBlocks, colorById]);
@@ -1460,7 +1512,7 @@ function fmtMin(min: number) {
                 );
 
                 const slotIndex = Math.floor(idx / 5);
-                isErasingRef.current = !!filled[slotIndex];
+                isErasingRef.current = (slotSegments[slotIndex]?.length ?? 0) > 0;
 
                 isDraggingRef.current = false;
                 dragStartRef.current = idx;
@@ -1523,7 +1575,7 @@ function fmtMin(min: number) {
                 );
 
                 const slotIndex = Math.floor(idx / 5);
-                isErasingRef.current = !!filled[slotIndex];
+                isErasingRef.current = (slotSegments[slotIndex]?.length ?? 0) > 0;
 
                 isDraggingRef.current = false;
                 dragStartRef.current = idx;
@@ -1631,28 +1683,34 @@ function fmtMin(min: number) {
                   gridTemplateRows: `repeat(${ROWS}, ${CELL}px)`,
                 }}
               >
-                {filled.map((v, i) => {
+                {slotSegments.map((segments, i) => {
                   const isSelected = selSlots ? i >= selSlots.s && i < selSlots.e : false;
                   const col = i % COLS;
                   const isHalfHourLine = col === 5;
                   const isLiveSlot =
                     !!liveTrackVisual && i >= liveTrackVisual.startSlot && i < liveTrackVisual.endSlot;
+                  const hasFilled = segments.length > 0;
 
-                  let background = isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent";
+                  let composedSegments = segments;
+                  let background = isSelected
+                    ? "rgba(0,0,0,0.12)"
+                    : buildSlotGradient(composedSegments, theme.card);
                   if (!isSelected && isLiveSlot) {
                     const slotStartMin = i * 5;
                     const slotEndMin = slotStartMin + 5;
                     const overlapStart = Math.max(slotStartMin, liveTrackVisual?.startMin ?? slotStartMin);
                     const overlapEnd = Math.min(slotEndMin, liveTrackVisual?.nowMin ?? slotStartMin);
-                    const fillRatio = clamp((overlapEnd - overlapStart) / 5, 0, 1);
-                    const pct = Math.round(fillRatio * 100);
-                    const base = v ?? theme.card;
-                    background =
-                      pct <= 0
-                        ? base
-                        : pct >= 100
-                          ? (liveTrackVisual?.color ?? "#2563eb")
-                          : `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${base} ${pct}%)`;
+                    if (overlapEnd > overlapStart) {
+                      composedSegments = [
+                        ...segments,
+                        {
+                          start: overlapStart - slotStartMin,
+                          end: overlapEnd - slotStartMin,
+                          color: liveTrackVisual?.color ?? "#2563eb",
+                        },
+                      ];
+                      background = buildSlotGradient(composedSegments, theme.card);
+                    }
                   }
 
                   return (
@@ -1689,7 +1747,7 @@ function fmtMin(min: number) {
                           return;
                         }
 
-                        if (v) {
+                        if (hasFilled) {
                           removeBlockAt(i * 5);
                           return;
                         }
