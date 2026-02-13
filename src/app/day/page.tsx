@@ -11,7 +11,7 @@ const SLOTS = 288;
 // GRID: 12칸(=1시간) x 24줄(=24시간)
 const COLS = 12;
 const ROWS = 24;
-const CELL = 22;
+const CELL = 28;
 const GRID_W = COLS * CELL;
 const GRID_H = ROWS * CELL;
 
@@ -1940,10 +1940,8 @@ function fmtMin(min: number) {
             alignSelf: "flex-start",
           }}
         >
-
-
           {/* =======================
-              A. 총 공부시간 추이
+              통합 공부시간 추이
              ======================= */}
           <div
             style={{
@@ -1953,114 +1951,9 @@ function fmtMin(min: number) {
               padding: 16,
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: 16 }}>총 공부시간 추이</div>
-
-            {/* 기간 선택 */}
-            <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-              {[7, 14, 30].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setTrendDays(d as 7 | 14 | 30)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${theme.border}`,
-                    background: trendDays === d ? theme.controlActiveBg : theme.controlBg,
-                    color: trendDays === d ? theme.controlActiveText : theme.controlText,
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  {d}일
-                </button>
-              ))}
-            </div>
-
-            {(() => {
-              const W = isNarrow ? 760 : 560;
-              const H = 320;
-              const padL = 50;
-              const padR = 20;
-              const padT = 20;
-              const padB = 40;
-              const innerW = W - padL - padR;
-              const innerH = H - padT - padB;
-
-              const days = trend.totalsByDay;
-              const n = days.length;
-              const yMax = Math.max(1, ...days.map((d) => d.totalMin));
-
-              const xStep = n <= 1 ? 0 : innerW / (n - 1);
-              const xAt = (i: number) => padL + i * xStep;
-              const y = (v: number) => padT + innerH - (v / yMax) * innerH;
-
-              const points = days.map((d, i) => `${xAt(i)},${y(d.totalMin)}`).join(" ");
-
-              return (
-                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "visible" }}>
-                  <svg
-                    width={W}
-                    height={H}
-                    style={{ display: "block", minWidth: W }}
-                    onMouseLeave={() => setHoverIndex(null)}
-                    onMouseMove={(e) => {
-                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-                      const mx = e.clientX - rect.left;
-                      if (mx < padL || mx > W - padR) return;
-
-                      const idx = Math.round((mx - padL) / (xStep || 1));
-                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
-                    }}
-                  >
-                  {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
-                    const v = yMax * p;
-                    const yy = y(v);
-                    return (
-                      <g key={i}>
-                        <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke={theme.grid} />
-                        <text x={10} y={yy + 4} fontSize={11} fill={theme.axis}>
-                          {fmtMin(Math.round(v))}
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  <polyline points={points} fill="none" stroke={theme.text} strokeWidth={3} />
-
-                  {days.map((d, i) => (
-                    <circle key={i} cx={xAt(i)} cy={y(d.totalMin)} r={4} fill={theme.text} />
-                  ))}
-
-                  {hoverIndex != null && (
-                    <line
-                      x1={xAt(hoverIndex)}
-                      x2={xAt(hoverIndex)}
-                      y1={padT}
-                      y2={H - padB}
-                      stroke={theme.axis}
-                      strokeDasharray="4 4"
-                    />
-                  )}
-                  </svg>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* =======================
-              B. 과목별 공부시간 추이
-             ======================= */}
-          <div
-            style={{
-              border: `1px solid ${theme.border}`,
-              borderRadius: 14,
-              background: theme.card,
-              padding: 16,
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: 16 }}>과목별 공부시간 추이</div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>공부시간 추이</div>
             <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>
-              아래 범례를 클릭하면 과목별 라인을 숨기거나 다시 볼 수 있어
+              총합/과목 버튼을 눌러 라인을 숨기거나 다시 볼 수 있어
             </div>
 
             {(() => {
@@ -2091,6 +1984,7 @@ function fmtMin(min: number) {
                   : {
                       day: days[hoverIndex]?.day,
                       totals: days[hoverIndex]?.totals ?? {},
+                      totalMin: days[hoverIndex]?.totalMin ?? 0,
                       x: xAt(hoverIndex),
                     };
 
@@ -2104,8 +1998,56 @@ function fmtMin(min: number) {
                     overflowX: isNarrow ? "auto" : "visible",
                   }}
                 >
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                    {[7, 14, 30].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setTrendDays(d as 7 | 14 | 30)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 999,
+                          border: `1px solid ${theme.border}`,
+                          background: trendDays === d ? theme.controlActiveBg : theme.controlBg,
+                          color: trendDays === d ? theme.controlActiveText : theme.controlText,
+                          cursor: "pointer",
+                          fontSize: 13,
+                        }}
+                      >
+                        {d}일
+                      </button>
+                    ))}
+                  </div>
+
                   {/* 범례(카테고리 칩) */}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    <button
+                      onClick={() => setHiddenTotal((prev) => !prev)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: `1px solid ${theme.border}`,
+                        background: hiddenTotal ? theme.controlBg : theme.controlActiveBg,
+                        color: hiddenTotal ? theme.controlText : theme.controlActiveText,
+                        cursor: "pointer",
+                        fontSize: 12,
+                      }}
+                      title={hiddenTotal ? "표시" : "숨김"}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 999,
+                          background: theme.text,
+                          display: "inline-block",
+                          opacity: hiddenTotal ? 0.35 : 1,
+                        }}
+                      />
+                      총합
+                    </button>
                     {categories.map((c) => {
                       const hidden = !!hiddenCategoryIds[c.id];
                       return (
@@ -2186,6 +2128,17 @@ function fmtMin(min: number) {
                       );
                     })}
 
+                    {!hiddenTotal && (
+                      <polyline
+                        points={days
+                          .map((d, i) => `${xAt(i)},${y(d.totalMin)}`)
+                          .join(" ")}
+                        fill="none"
+                        stroke={theme.text}
+                        strokeWidth={3}
+                      />
+                    )}
+
                     {categories
                       .filter((c) => !hiddenCategoryIds[c.id])
                       .map((c) => {
@@ -2231,6 +2184,14 @@ function fmtMin(min: number) {
                               />
                             );
                           })}
+                        {!hiddenTotal && (
+                          <circle
+                            cx={xAt(hoverIndex)}
+                            cy={y(days[hoverIndex]?.totalMin ?? 0)}
+                            r={4}
+                            fill={theme.text}
+                          />
+                        )}
                       </g>
                     )}
                   </svg>
@@ -2254,6 +2215,33 @@ function fmtMin(min: number) {
                         {fmtDayLabel(tooltip.day)}
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {!hiddenTotal && (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: theme.text,
+                                  display: "inline-block",
+                                }}
+                              />
+                              <span style={{ color: theme.text }}>총합</span>
+                            </div>
+                            <span style={{ color: theme.text, fontWeight: 700 }}>
+                              {fmtMin(tooltip.totalMin)}
+                            </span>
+                          </div>
+                        )}
                         {categories.map((c) => {
                           const hidden = !!hiddenCategoryIds[c.id];
                           const v = tooltip.totals[c.id] ?? 0;
