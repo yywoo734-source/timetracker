@@ -161,6 +161,8 @@ export default function DayPage() {
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef<number | null>(null);
   const isErasingRef = useRef(false);
+  const isPinchingRef = useRef(false);
+  const suppressClickUntilRef = useRef(0);
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -1071,7 +1073,7 @@ export default function DayPage() {
                 overflow: "hidden",
                 background: theme.card,
                 userSelect: "none",
-                touchAction: "none",
+                touchAction: "pinch-zoom",
               }}
               onMouseDown={(e) => {
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -1121,6 +1123,17 @@ export default function DayPage() {
                 isErasingRef.current = false;
               }}
               onTouchStart={(e) => {
+                if (e.touches.length > 1) {
+                  isPinchingRef.current = true;
+                  suppressClickUntilRef.current = Date.now() + 500;
+                  dragStartRef.current = null;
+                  isDraggingRef.current = false;
+                  isErasingRef.current = false;
+                  setDragStart(null);
+                  setDragEnd(null);
+                  return;
+                }
+
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                 const t = e.touches[0];
                 const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
@@ -1132,6 +1145,17 @@ export default function DayPage() {
                 dragStartRef.current = idx;
               }}
               onTouchMove={(e) => {
+                if (e.touches.length > 1 || isPinchingRef.current) {
+                  isPinchingRef.current = true;
+                  suppressClickUntilRef.current = Date.now() + 500;
+                  dragStartRef.current = null;
+                  isDraggingRef.current = false;
+                  isErasingRef.current = false;
+                  setDragStart(null);
+                  setDragEnd(null);
+                  return;
+                }
+
                 if (dragStartRef.current == null) return;
 
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -1147,6 +1171,17 @@ export default function DayPage() {
                 }
               }}
               onTouchEnd={() => {
+                if (isPinchingRef.current) {
+                  suppressClickUntilRef.current = Date.now() + 500;
+                  dragStartRef.current = null;
+                  isDraggingRef.current = false;
+                  isErasingRef.current = false;
+                  setDragStart(null);
+                  setDragEnd(null);
+                  isPinchingRef.current = false;
+                  return;
+                }
+
                 if (isDraggingRef.current) {
                   commitSelection();
                 } else {
@@ -1225,6 +1260,7 @@ export default function DayPage() {
                       }}
                       title={labelFromIndex03(i * 5)}
                       onClick={(e) => {
+                        if (Date.now() < suppressClickUntilRef.current) return;
                         e.stopPropagation();
 
                         if (isDraggingRef.current) {
