@@ -775,7 +775,8 @@ function fmtMin(min: number) {
       for (const x of totalsByDay) yCandidates.push(x.totalMin);
     }
 
-    const maxY = Math.max(1, ...yCandidates);
+    const rawMaxY = Math.max(1, ...yCandidates);
+    const maxY = rawMaxY * 1.1;
     return { totalsByDay, maxY };
   }, [
     trendDates,
@@ -1398,14 +1399,14 @@ function fmtMin(min: number) {
         </div>
       </div>
 
-      {/* LEFT + RIGHT: 타임트래커 / 그래프 */}
+      {/* 상단 격자 + 하단 기록/그래프 */}
       <div
         style={{
           marginTop: 8,
           display: "flex",
-          gap: 24,
+          gap: 20,
           alignItems: "flex-start",
-          flexDirection: isNarrow ? "column" : "row",
+          flexDirection: "column",
           justifyContent: "flex-start",
         }}
       >
@@ -1925,18 +1926,17 @@ function fmtMin(min: number) {
           </div>
         </div>
 
-        {/* RIGHT: 그래프 영역 */}
+        {/* 하단: 그래프 영역 */}
         <div
           style={{
-            flex: isNarrow ? "1 1 auto" : "1 1 560px",
-            minWidth: isNarrow ? 0 : 360,
-            maxWidth: isNarrow ? "100%" : 560,
+            flex: "1 1 auto",
+            minWidth: 0,
+            maxWidth: "100%",
             width: "100%",
             display: "flex",
             flexDirection: "column",
             gap: 24,
-            position: isNarrow ? "static" : "sticky",
-            top: isNarrow ? undefined : 24,
+            position: "static",
             alignSelf: "flex-start",
           }}
         >
@@ -1957,7 +1957,7 @@ function fmtMin(min: number) {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 560;
+              const W = isNarrow ? 760 : 980;
               const H = 360;
               const padL = 50;
               const padR = 20;
@@ -1969,10 +1969,7 @@ function fmtMin(min: number) {
               const days = trend.totalsByDay;
               const n = days.length;
 
-              const visibleCats = categories.filter((c) => !hiddenCategoryIds[c.id]);
-              const catsForScale = visibleCats.length ? visibleCats : categories;
-              const yCandidates = days.flatMap((d) => catsForScale.map((c) => d.totals[c.id] ?? 0));
-              const yMax = Math.max(1, ...yCandidates);
+              const yMax = trend.maxY;
 
               const xStep = n <= 1 ? 0 : innerW / (n - 1);
               const xAt = (i: number) => padL + i * xStep;
