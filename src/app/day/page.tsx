@@ -134,16 +134,28 @@ function loadCategories(): Category[] {
 }
 
 function addDays(isoDate: string, diff: number) {
-  const d = new Date(isoDate);
+  const d = parseLocalDate(isoDate);
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 function isoDayKey03(date = new Date()) {
   const d = new Date(date);
   // 03:00 기준으로 하루를 끊기 위해 3시간을 빼서 날짜 키를 만든다
   d.setHours(d.getHours() - 3);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
+}
+
+function formatLocalDate(d: Date) {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDate(isoDate: string) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
 type DayRecord = { blocks: Block[]; notesByCategory: Record<string, string> };
@@ -172,11 +184,7 @@ export default function DayPage() {
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
 
   // ✅ Step 1: 03시 기준 날짜
-  const [day, setDay] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() - 3);
-    return d.toISOString().slice(0, 10);
-  });
+  const [day, setDay] = useState(() => isoDayKey03());
 
   // ✅ categories는 setup에서 로드
   const [categories, setCategories] = useState<Category[]>([]);
@@ -415,9 +423,7 @@ export default function DayPage() {
 
   // ✅ 날짜 이동
   function moveDay(diff: number) {
-    const d = new Date(day);
-    d.setDate(d.getDate() + diff);
-    setDay(d.toISOString().slice(0, 10));
+    setDay((prev) => addDays(prev, diff));
   }
 
   // ✅ 날짜 전환 시 현재 day 로딩 상태 초기화
