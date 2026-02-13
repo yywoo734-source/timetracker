@@ -58,7 +58,11 @@ function normalizeRange(a: number, b: number) {
 
 function currentMin03FromMs(ms: number) {
   const d = new Date(ms);
-  const mins = d.getHours() * 60 + d.getMinutes();
+  const mins =
+    d.getHours() * 60 +
+    d.getMinutes() +
+    d.getSeconds() / 60 +
+    d.getMilliseconds() / 60000;
   return (mins - START_OFFSET_MIN + 1440) % 1440;
 }
 
@@ -364,8 +368,19 @@ export default function DayPage() {
 
   function getCurrentMin03() {
     const now = new Date();
-    const mins = now.getHours() * 60 + now.getMinutes();
+    const mins =
+      now.getHours() * 60 +
+      now.getMinutes() +
+      now.getSeconds() / 60 +
+      now.getMilliseconds() / 60000;
     return (mins - START_OFFSET_MIN + 1440) % 1440;
+  }
+
+  function clampInputMinToNow(idxMin: number) {
+    if (!isToday) return idxMin;
+    const nowMin = getCurrentMin03();
+    const maxAllowed = Math.floor(nowMin / 5) * 5;
+    return Math.min(idxMin, maxAllowed);
   }
 
   // ✅ 1분마다 현재시간 갱신
@@ -610,8 +625,9 @@ export default function DayPage() {
     const startSlot = Math.floor(safeStart / 5);
     const endSlot = Math.max(startSlot + 1, Math.ceil((safeStart + durMin) / 5));
     const currentSlot = Math.floor(safeNow / 5);
-    const withinSlotMin = safeNow % 5;
-    const progress = clamp(withinSlotMin / 5, 0.08, 1);
+    const slotStartMin = currentSlot * 5;
+    const withinSlotMin = safeNow - slotStartMin;
+    const progress = clamp(withinSlotMin / 5, 0, 1);
     const color = colorById[autoTrackCategoryId] ?? "#2563eb";
 
     return { startSlot, endSlot, currentSlot, progress, color };
@@ -658,11 +674,6 @@ function fmtMin(min: number) {
     const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
     return { totals, totalMin };
   }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec]);
-
-  const autoTrackCategory = useMemo(
-    () => categories.find((c) => c.id === autoTrackCategoryId) ?? null,
-    [categories, autoTrackCategoryId]
-  );
 
   const baseSecondsByCategory = useMemo(() => {
     const daySeconds = secondsByDay[day] ?? {};
@@ -1221,7 +1232,7 @@ function fmtMin(min: number) {
           합계: {fmtMin(summary.totalMin)}
           {autoTrackCategoryId && (
             <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted, fontWeight: 600 }}>
-              자동 기록: {autoTrackCategory?.label ?? "선택 과목"} · 누적 {fmtElapsed(autoTrackCumulativeSec)}
+              자동 기록중
             </span>
           )}
         </div>
@@ -1409,7 +1420,9 @@ function fmtMin(min: number) {
               }}
               onMouseDown={(e) => {
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const idx = snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left);
+                const idx = clampInputMinToNow(
+                  snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left)
+                );
 
                 const slotIndex = Math.floor(idx / 5);
                 isErasingRef.current = !!filled[slotIndex];
@@ -1421,7 +1434,9 @@ function fmtMin(min: number) {
                 if (dragStartRef.current == null) return;
 
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const idx = snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left);
+                const idx = clampInputMinToNow(
+                  snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left)
+                );
 
                 if (Math.abs(idx - dragStartRef.current) >= 5) {
                   if (!isDraggingRef.current) {
@@ -1468,7 +1483,9 @@ function fmtMin(min: number) {
 
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                 const t = e.touches[0];
-                const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
+                const idx = clampInputMinToNow(
+                  snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left)
+                );
 
                 const slotIndex = Math.floor(idx / 5);
                 isErasingRef.current = !!filled[slotIndex];
@@ -1492,7 +1509,9 @@ function fmtMin(min: number) {
 
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                 const t = e.touches[0];
-                const idx = snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left);
+                const idx = clampInputMinToNow(
+                  snapIndexFromPoint(t.clientY, t.clientX, rect.top, rect.left)
+                );
 
                 if (Math.abs(idx - dragStartRef.current) >= 5) {
                   if (!isDraggingRef.current) {
@@ -1612,6 +1631,7 @@ function fmtMin(min: number) {
                       onClick={(e) => {
                         if (Date.now() < suppressClickUntilRef.current) return;
                         e.stopPropagation();
+                        if (isToday && i * 5 > Math.floor(getCurrentMin03() / 5) * 5) return;
 
                         if (isDraggingRef.current) {
                           isErasingRef.current = false;
