@@ -794,19 +794,19 @@ function fmtMin(min: number) {
     () =>
       themeMode === "dark"
         ? {
-            bg: "radial-gradient(1200px 680px at 12% -10%, #111319 0%, #060708 34%, #000000 72%)",
-            card: "#0b0b0d",
-            cardSoft: "#111216",
-            text: "#f4f4f5",
-            muted: "#a1a1aa",
-            border: "#27272a",
-            borderSubtle: "#18181b",
-            controlBg: "#121217",
+            bg: "#121212",
+            card: "#171717",
+            cardSoft: "#1c1c1c",
+            text: "#EAEAEA",
+            muted: "#b0b0b0",
+            border: "#2e2e2e",
+            borderSubtle: "#242424",
+            controlBg: "#1f1f1f",
             controlActiveBg: "#0ea5e9",
             controlActiveText: "#ffffff",
-            controlText: "#f4f4f5",
-            axis: "#71717a",
-            grid: "#1f2025",
+            controlText: "#EAEAEA",
+            axis: "#9a9a9a",
+            grid: "#2a2a2a",
             panelShadow: "0 12px 40px rgba(0,0,0,0.45)",
             buttonShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 6px 20px rgba(0,0,0,0.28)",
             surfaceGlow: "0 0 0 1px rgba(255,255,255,0.02)",
@@ -1650,8 +1650,9 @@ function fmtMin(min: number) {
                   if (!isSelected && isLiveSlot) {
                     if (isLiveCurrent) {
                       const pct = Math.round((liveTrackVisual?.progress ?? 0) * 100);
-                      background = `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${theme.card} ${pct}%)`;
-                    } else if (!v) {
+                      const base = v ?? theme.card;
+                      background = `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${base} ${pct}%)`;
+                    } else {
                       background = `${liveTrackVisual?.color ?? "#2563eb"}66`;
                     }
                   }
@@ -2294,6 +2295,26 @@ function fmtMin(min: number) {
           </div>
         </div>
       </div>
+
+      <button
+        onClick={() => window.location.reload()}
+        style={{
+          position: "fixed",
+          right: 16,
+          bottom: 16,
+          zIndex: 50,
+          padding: "10px 14px",
+          borderRadius: 999,
+          border: `1px solid ${theme.border}`,
+          background: theme.controlBg,
+          color: theme.controlText,
+          cursor: "pointer",
+          fontSize: 13,
+          boxShadow: theme.buttonShadow,
+        }}
+      >
+        새로고침
+      </button>
     </div>
   );
-} 
+}
