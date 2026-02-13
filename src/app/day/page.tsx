@@ -620,21 +620,16 @@ export default function DayPage() {
 
     const startMin = currentMin03FromMs(autoTrackStartedAtMs);
     const nowMinPrecise = currentMin03FromMs(autoTrackNowMs);
-    const durMin = Math.max(0, (autoTrackNowMs - autoTrackStartedAtMs) / 60000);
 
     // day 경계 넘어가면 자동중지가 우선이므로 여기서는 같은 날짜 범위만 시각화
     const safeStart = clamp(startMin, 0, 1439);
     const safeNow = clamp(nowMinPrecise, safeStart, 1439);
 
     const startSlot = Math.floor(safeStart / 5);
-    const endSlot = Math.max(startSlot + 1, Math.ceil((safeStart + durMin) / 5));
-    const currentSlot = Math.floor(safeNow / 5);
-    const slotStartMin = currentSlot * 5;
-    const withinSlotMin = safeNow - slotStartMin;
-    const progress = clamp(withinSlotMin / 5, 0, 1);
+    const endSlot = Math.max(startSlot + 1, Math.ceil(safeNow / 5));
     const color = colorById[autoTrackCategoryId] ?? "#2563eb";
 
-    return { startSlot, endSlot, currentSlot, progress, color };
+    return { startSlot, endSlot, startMin: safeStart, nowMin: safeNow, color };
   }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs, isToday, colorById]);
 
   const selSlots = useMemo(() => {
@@ -1642,17 +1637,22 @@ function fmtMin(min: number) {
                   const isHalfHourLine = col === 5;
                   const isLiveSlot =
                     !!liveTrackVisual && i >= liveTrackVisual.startSlot && i < liveTrackVisual.endSlot;
-                  const isLiveCurrent = !!liveTrackVisual && i === liveTrackVisual.currentSlot;
 
                   let background = isSelected ? "rgba(0,0,0,0.12)" : v ? v : "transparent";
                   if (!isSelected && isLiveSlot) {
-                    if (isLiveCurrent) {
-                      const pct = Math.round((liveTrackVisual?.progress ?? 0) * 100);
-                      const base = v ?? theme.card;
-                      background = `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${base} ${pct}%)`;
-                    } else {
-                      background = `${liveTrackVisual?.color ?? "#2563eb"}66`;
-                    }
+                    const slotStartMin = i * 5;
+                    const slotEndMin = slotStartMin + 5;
+                    const overlapStart = Math.max(slotStartMin, liveTrackVisual?.startMin ?? slotStartMin);
+                    const overlapEnd = Math.min(slotEndMin, liveTrackVisual?.nowMin ?? slotStartMin);
+                    const fillRatio = clamp((overlapEnd - overlapStart) / 5, 0, 1);
+                    const pct = Math.round(fillRatio * 100);
+                    const base = v ?? theme.card;
+                    background =
+                      pct <= 0
+                        ? base
+                        : pct >= 100
+                          ? (liveTrackVisual?.color ?? "#2563eb")
+                          : `linear-gradient(to right, ${(liveTrackVisual?.color ?? "#2563eb")} ${pct}%, ${base} ${pct}%)`;
                   }
 
                   return (
