@@ -201,6 +201,8 @@ export default function DayPage() {
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
   const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
   const autoTrackLastMinRef = useRef<number | null>(null);
+  const [autoTrackStartedAtMs, setAutoTrackStartedAtMs] = useState<number | null>(null);
+  const [autoTrackNowMs, setAutoTrackNowMs] = useState<number>(Date.now());
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
@@ -353,7 +355,15 @@ export default function DayPage() {
     if (!autoTrackCategoryId) return;
     setAutoTrackCategoryId(null);
     autoTrackLastMinRef.current = null;
+    setAutoTrackStartedAtMs(null);
   }, [isToday, autoTrackCategoryId]);
+
+  useEffect(() => {
+    if (!autoTrackCategoryId) return;
+    setAutoTrackNowMs(Date.now());
+    const id = window.setInterval(() => setAutoTrackNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [autoTrackCategoryId]);
 
   // ✅ 카테고리 로드
   useEffect(() => {
@@ -539,6 +549,14 @@ export default function DayPage() {
     return `${h}h ${m}m`;
   }
 
+  function fmtElapsed(sec: number) {
+    const s = sec % 60;
+    const totalMin = Math.floor(sec / 60);
+    const m = totalMin % 60;
+    const h = Math.floor(totalMin / 60);
+    return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  }
+
   // ✅ 요약(카테고리별)
   const summary = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -547,6 +565,16 @@ export default function DayPage() {
     const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
     return { totals, totalMin };
   }, [actualBlocks, categories]);
+
+  const autoTrackCategory = useMemo(
+    () => categories.find((c) => c.id === autoTrackCategoryId) ?? null,
+    [categories, autoTrackCategoryId]
+  );
+
+  const autoTrackElapsedSec = useMemo(() => {
+    if (!autoTrackCategoryId || autoTrackStartedAtMs == null) return 0;
+    return Math.max(0, Math.floor((autoTrackNowMs - autoTrackStartedAtMs) / 1000));
+  }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -656,6 +684,7 @@ export default function DayPage() {
     if (autoTrackCategoryId === categoryId) {
       setAutoTrackCategoryId(null);
       autoTrackLastMinRef.current = null;
+      setAutoTrackStartedAtMs(null);
       return;
     }
 
@@ -667,6 +696,9 @@ export default function DayPage() {
     setActiveCategoryId(categoryId);
     setAutoTrackCategoryId(categoryId);
     autoTrackLastMinRef.current = getCurrentMin03();
+    const nowMs = Date.now();
+    setAutoTrackStartedAtMs(nowMs);
+    setAutoTrackNowMs(nowMs);
   }
 
   useEffect(() => {
@@ -1019,8 +1051,8 @@ export default function DayPage() {
         <div style={{ fontWeight: 700 }}>
           합계: {fmtMin(summary.totalMin)}
           {autoTrackCategoryId && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted }}>
-              자동 기록 중
+            <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted, fontWeight: 600 }}>
+              자동 기록: {autoTrackCategory?.label ?? "선택 과목"} · {fmtElapsed(autoTrackElapsedSec)}
             </span>
           )}
         </div>
@@ -1060,6 +1092,11 @@ export default function DayPage() {
             <span style={{ fontSize: 13 }}>
               {c.label}: {fmtMin(summary.totals[c.id] ?? 0)}
             </span>
+            {autoTrackCategoryId === c.id && (
+              <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>
+                + {fmtElapsed(autoTrackElapsedSec)}
+              </span>
+            )}
           </button>
         ))}
       </div>
