@@ -191,6 +191,8 @@ export default function DayPage() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const [isNarrow, setIsNarrow] = useState(false);
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
+  const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
+  const autoTrackLastMinRef = useRef<number | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
@@ -294,6 +296,12 @@ export default function DayPage() {
     return Math.floor(slot / COLS);
   }, [nowMin]);
 
+  function getCurrentMin03() {
+    const now = new Date();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    return (mins - START_OFFSET_MIN + 1440) % 1440;
+  }
+
   // ✅ 1분마다 현재시간 갱신
   useEffect(() => {
     const tick = () => {
@@ -331,6 +339,13 @@ export default function DayPage() {
     localStorage.setItem(THEME_KEY, themeMode);
     document.documentElement.style.colorScheme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    if (isToday) return;
+    if (!autoTrackCategoryId) return;
+    setAutoTrackCategoryId(null);
+    autoTrackLastMinRef.current = null;
+  }, [isToday, autoTrackCategoryId]);
 
   // ✅ 카테고리 로드
   useEffect(() => {
@@ -630,6 +645,61 @@ export default function DayPage() {
   function toggleCategoryVisible(id: string) {
     setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
   }
+
+  function toggleAutoTrack(categoryId: string) {
+    if (autoTrackCategoryId === categoryId) {
+      setAutoTrackCategoryId(null);
+      autoTrackLastMinRef.current = null;
+      return;
+    }
+
+    if (!isToday) {
+      alert("자동 기록은 오늘 화면에서만 사용할 수 있어요.");
+      return;
+    }
+
+    setActiveCategoryId(categoryId);
+    setAutoTrackCategoryId(categoryId);
+    autoTrackLastMinRef.current = getCurrentMin03();
+  }
+
+  useEffect(() => {
+    if (!autoTrackCategoryId) return;
+
+    const tick = () => {
+      if (!isToday) return;
+      const now = getCurrentMin03();
+      const prev = autoTrackLastMinRef.current;
+      if (prev == null) {
+        autoTrackLastMinRef.current = now;
+        return;
+      }
+      if (now < prev) {
+        autoTrackLastMinRef.current = now;
+        return;
+      }
+
+      const from = Math.ceil(prev / 5) * 5;
+      const to = Math.floor(now / 5) * 5;
+
+      if (to > from) {
+        setActualBlocks((current) =>
+          applyBlock(current, {
+            start: from,
+            dur: to - from,
+            categoryId: autoTrackCategoryId,
+          })
+        );
+      }
+
+      autoTrackLastMinRef.current = now;
+    };
+
+    tick();
+    const id = window.setInterval(tick, 15000);
+    return () => window.clearInterval(id);
+  }, [autoTrackCategoryId, isToday]);
+
   function removeBlockAt(min: number) {
     setActualBlocks((prev) => {
       pushHistory(structuredClone(prev));
@@ -940,19 +1010,37 @@ export default function DayPage() {
           alignItems: "center",
         }}
       >
-        <div style={{ fontWeight: 700 }}>합계: {fmtMin(summary.totalMin)}</div>
+        <div style={{ fontWeight: 700 }}>
+          합계: {fmtMin(summary.totalMin)}
+          {autoTrackCategoryId && (
+            <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted }}>
+              자동 기록 중
+            </span>
+          )}
+        </div>
         {categories.map((c) => (
-          <div
+          <button
             key={c.id}
+            onClick={() => toggleAutoTrack(c.id)}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 6,
               padding: "4px 10px",
               borderRadius: 999,
-              background: theme.card,
-              border: `1px solid ${theme.border}`,
+              background:
+                autoTrackCategoryId === c.id
+                  ? c.color
+                  : theme.card,
+              border: `1px solid ${autoTrackCategoryId === c.id ? c.color : theme.border}`,
+              color: autoTrackCategoryId === c.id ? "#fff" : theme.text,
+              cursor: "pointer",
             }}
+            title={
+              autoTrackCategoryId === c.id
+                ? "클릭해서 자동 기록 중지"
+                : "클릭해서 자동 기록 시작"
+            }
           >
             <span
               style={{
@@ -966,7 +1054,7 @@ export default function DayPage() {
             <span style={{ fontSize: 13 }}>
               {c.label}: {fmtMin(summary.totals[c.id] ?? 0)}
             </span>
-          </div>
+          </button>
         ))}
       </div>
 
