@@ -1079,6 +1079,41 @@ export default function DayPage() {
         ))}
       </div>
 
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <button
+          onClick={undo}
+          disabled={history.length === 0}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
+            cursor: history.length === 0 ? "not-allowed" : "pointer",
+            opacity: history.length === 0 ? 0.5 : 1,
+            fontSize: 13,
+          }}
+        >
+          이전 (Undo)
+        </button>
+        <button
+          onClick={redo}
+          disabled={future.length === 0}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
+            cursor: future.length === 0 ? "not-allowed" : "pointer",
+            opacity: future.length === 0 ? 0.5 : 1,
+            fontSize: 13,
+          }}
+        >
+          다시 (Redo)
+        </button>
+      </div>
+
       <div style={{ marginTop: 16, fontSize: 13, color: theme.muted }}>
         격자에서 드래그해서 5분 칸 단위로 체크해봐
       </div>
