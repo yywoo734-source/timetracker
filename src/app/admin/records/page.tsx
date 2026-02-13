@@ -23,6 +23,13 @@ type RecordPayload = {
 };
 
 type Override = { categoryId: string; label: string; color?: string | null };
+type SlotSeg = { start: number; end: number; color: string };
+
+const COLS = 12;
+const ROWS = 24;
+const CELL = 20;
+const GRID_W = COLS * CELL;
+const GRID_H = ROWS * CELL;
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -41,6 +48,16 @@ function labelFromIndex03(idxMin: number) {
   return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
+function labelHourFromIndex03(idxMin: number) {
+  const START_OFFSET_MIN = 180;
+  const m = Math.floor(idxMin);
+  const realMin = (m + START_OFFSET_MIN) % 1440;
+  const h = Math.floor(realMin / 60);
+  const mm = realMin % 60;
+  const isNextDay = m + START_OFFSET_MIN >= 1440;
+  return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(mm)}`;
+}
+
 function fmtDur(min: number) {
   const sec = Math.max(0, Math.round(min * 60));
   const h = Math.floor(sec / 3600);
@@ -49,6 +66,31 @@ function fmtDur(min: number) {
   if (h === 0 && m === 0) return `${s}초`;
   if (h === 0) return `${m}분 ${s}초`;
   return `${h}시간 ${m}분 ${s}초`;
+}
+
+function buildSlotGradient(segments: SlotSeg[], baseColor: string) {
+  if (segments.length === 0) return "transparent";
+  const sorted = [...segments]
+    .map((s) => ({ start: Math.max(0, Math.min(5, s.start)), end: Math.max(0, Math.min(5, s.end)), color: s.color }))
+    .filter((s) => s.end > s.start)
+    .sort((a, b) => a.start - b.start);
+  if (sorted.length === 0) return "transparent";
+
+  const stops: string[] = [];
+  let cursor = 0;
+  for (const seg of sorted) {
+    const s = (seg.start / 5) * 100;
+    const e = (seg.end / 5) * 100;
+    if (s > cursor) {
+      stops.push(`${baseColor} ${cursor}%`, `${baseColor} ${s}%`);
+    }
+    stops.push(`${seg.color} ${s}%`, `${seg.color} ${e}%`);
+    cursor = e;
+  }
+  if (cursor < 100) {
+    stops.push(`${baseColor} ${cursor}%`, `${baseColor} 100%`);
+  }
+  return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
 export default function AdminRecordsPage() {
@@ -64,6 +106,7 @@ export default function AdminRecordsPage() {
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDayPreview, setShowDayPreview] = useState(false);
 
   function authHeaders(token: string | undefined) {
     return token ? { Authorization: `Bearer ${token}` } : undefined;
@@ -127,6 +170,7 @@ export default function AdminRecordsPage() {
     }
     const body = await res.json();
     setRecord(body.record ?? null);
+    setShowDayPreview(true);
 
     const overridesRes = await fetch(`/api/admin/category-mapping?studentId=${studentId}`, {
       headers: authHeaders(token),
@@ -253,6 +297,18 @@ export default function AdminRecordsPage() {
             return (
               <div style={{ display: "grid", gap: 16 }}>
                 <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                  <button
+                    onClick={() => setShowDayPreview((v) => !v)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #ddd",
+                      background: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {showDayPreview ? "학생 /day 숨기기" : "학생 /day 보기"}
+                  </button>
                   <div style={{ fontWeight: 600 }}>총합</div>
                   <div>{fmtDur(totalMin)}</div>
                   {!hasCategoryMeta && (
@@ -261,6 +317,81 @@ export default function AdminRecordsPage() {
                     </div>
                   )}
                 </div>
+
+                {showDayPreview && (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>학생 /day 미리보기</div>
+                    {(() => {
+                      const slotSegments: SlotSeg[][] = Array.from({ length: COLS * ROWS }, () => []);
+                      for (const b of blocks) {
+                        const c = displayCategory(b.categoryId);
+                        const blockStart = b.start;
+                        const blockEnd = b.start + b.dur;
+                        const slotStart = Math.floor(blockStart / 5);
+                        const slotEnd = Math.ceil(blockEnd / 5);
+                        for (let i = slotStart; i < slotEnd && i < COLS * ROWS; i++) {
+                          const s0 = i * 5;
+                          const s1 = s0 + 5;
+                          const overlapStart = Math.max(s0, blockStart);
+                          const overlapEnd = Math.min(s1, blockEnd);
+                          if (overlapEnd > overlapStart) {
+                            slotSegments[i].push({
+                              start: overlapStart - s0,
+                              end: overlapEnd - s0,
+                              color: c.color,
+                            });
+                          }
+                        }
+                      }
+
+                      return (
+                        <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+                          <div style={{ width: 78, fontSize: 11, color: "#666" }}>
+                            <div style={{ height: 8 }} />
+                            {Array.from({ length: ROWS }).map((_, r) => (
+                              <div key={r} style={{ height: CELL, display: "flex", alignItems: "center" }}>
+                                {labelHourFromIndex03(r * 60)}
+                              </div>
+                            ))}
+                          </div>
+                          <div
+                            style={{
+                              width: GRID_W,
+                              minWidth: GRID_W,
+                              height: GRID_H,
+                              border: "1px solid #e5e7eb",
+                              borderRadius: 10,
+                              overflow: "hidden",
+                              background: "#fff",
+                              display: "grid",
+                              gridTemplateColumns: `repeat(${COLS}, ${CELL}px)`,
+                              gridTemplateRows: `repeat(${ROWS}, ${CELL}px)`,
+                            }}
+                          >
+                            {slotSegments.map((segments, i) => {
+                              const col = i % COLS;
+                              const isHalfHourLine = col === 5;
+                              return (
+                                <div
+                                  key={i}
+                                  title={labelFromIndex03(i * 5)}
+                                  style={{
+                                    width: CELL,
+                                    height: CELL,
+                                    boxSizing: "border-box",
+                                    borderRight: isHalfHourLine ? "2px solid #d1d5db" : "1px solid #f1f5f9",
+                                    borderBottom: "1px solid #f1f5f9",
+                                    background: buildSlotGradient(segments, "#ffffff"),
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 <div>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>블록 목록</div>
