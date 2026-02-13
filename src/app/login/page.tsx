@@ -30,7 +30,22 @@ export default function LoginPage() {
             data: { name },
           },
         });
-        if (signUpError) throw signUpError;
+        if (signUpError) {
+          const msg = signUpError.message.toLowerCase();
+          const isRetryWindow =
+            msg.includes("for security purposes") ||
+            msg.includes("request this after") ||
+            msg.includes("rate limit");
+          const isAlreadyExists = msg.includes("already registered");
+
+          // 가입이 이미 접수된 상태에서 재시도되는 경우 UX상 pending으로 보낸다.
+          if (isRetryWindow || isAlreadyExists) {
+            router.replace("/pending");
+            return;
+          }
+
+          throw signUpError;
+        }
 
         const token =
           signUpData.session?.access_token ??
