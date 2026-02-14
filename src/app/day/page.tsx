@@ -278,6 +278,7 @@ export default function DayPage() {
   const [notesByCategory, setNotesByCategory] = useState<Record<string, string>>({});
   const [notesByBlock, setNotesByBlock] = useState<Record<string, string>>({});
   const [openBlockMemoId, setOpenBlockMemoId] = useState<string | null>(null);
+  const [showTodayMemoBoard, setShowTodayMemoBoard] = useState(false);
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
@@ -489,6 +490,15 @@ export default function DayPage() {
     localStorage.setItem(THEME_KEY, themeMode);
     document.documentElement.style.colorScheme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    if (!showTodayMemoBoard) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowTodayMemoBoard(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showTodayMemoBoard]);
 
   useEffect(() => {
     if (isToday) return;
@@ -882,6 +892,38 @@ function fmtMin(min: number) {
     );
     return { totals, totalMin };
   }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec, isStudyIncluded]);
+
+  const todayMemoBoard = useMemo(() => {
+    const categoryNotes = categories
+      .map((c) => ({
+        categoryId: c.id,
+        label: c.label,
+        color: c.color,
+        note: (notesByCategory[c.id] ?? "").trim(),
+      }))
+      .filter((x) => x.note.length > 0);
+
+    const timelineNotes = actualBlocks
+      .slice()
+      .sort((a, b) => a.start - b.start)
+      .map((b) => {
+        const cat = categories.find((c) => c.id === b.categoryId);
+        const blockNote = (notesByBlock[b.id] ?? "").trim();
+        const categoryNote = (notesByCategory[b.categoryId] ?? "").trim();
+        return {
+          id: b.id,
+          label: cat?.label ?? "(알 수 없음)",
+          color: cat?.color ?? "#111827",
+          range: `${labelFromIndex03Sec(b.start)} ~ ${labelFromIndex03Sec(b.start + b.dur)}`,
+          duration: fmtDurSec(b.dur),
+          blockNote,
+          categoryNote,
+        };
+      })
+      .filter((x) => x.blockNote.length > 0 || x.categoryNote.length > 0);
+
+    return { categoryNotes, timelineNotes };
+  }, [categories, notesByCategory, notesByBlock, actualBlocks]);
 
   const baseSecondsByCategory = useMemo(() => {
     const daySeconds = secondsByDay[day] ?? {};
@@ -2043,7 +2085,24 @@ function fmtMin(min: number) {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontWeight: 800, fontSize: 14 }}>오늘 기록</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>총 {fmtMin(summary.totalMin)}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  onClick={() => setShowTodayMemoBoard(true)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.controlBg,
+                    color: theme.controlText,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  메모 한눈에 보기
+                </button>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>총 {fmtMin(summary.totalMin)}</div>
+              </div>
             </div>
 
             <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2744,6 +2803,118 @@ function fmtMin(min: number) {
           </div>
         </div>
       </div>
+
+      {showTodayMemoBoard && (
+        <div
+          onClick={() => setShowTodayMemoBoard(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 120,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "86vh",
+              overflow: "auto",
+              border: `1px solid ${theme.border}`,
+              borderRadius: 16,
+              background: theme.card,
+              color: theme.text,
+              padding: 16,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900 }}>오늘 메모 한눈에 보기</div>
+                <div style={{ marginTop: 4, fontSize: 12, color: theme.muted }}>{day}</div>
+              </div>
+              <button
+                onClick={() => setShowTodayMemoBoard(false)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${theme.border}`,
+                  background: theme.controlBg,
+                  color: theme.controlText,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                닫기
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, fontWeight: 800, fontSize: 13 }}>과목별 한 줄 메모</div>
+            {todayMemoBoard.categoryNotes.length === 0 ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>작성된 과목 메모가 없습니다.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 8 }}>
+                {todayMemoBoard.categoryNotes.map((item) => (
+                  <div
+                    key={item.categoryId}
+                    style={{
+                      border: `1px solid ${theme.borderSubtle}`,
+                      borderRadius: 10,
+                      background: theme.cardSoft,
+                      padding: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 999, background: item.color, display: "inline-block" }} />
+                      {item.label}
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.45 }}>{item.note}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 16, fontWeight: 800, fontSize: 13 }}>타임로그 메모</div>
+            {todayMemoBoard.timelineNotes.length === 0 ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>작성된 타임로그 메모가 없습니다.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {todayMemoBoard.timelineNotes.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      border: `1px solid ${theme.borderSubtle}`,
+                      borderRadius: 10,
+                      background: theme.cardSoft,
+                      padding: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 999, background: item.color, display: "inline-block" }} />
+                        {item.label}
+                      </div>
+                      <div style={{ color: theme.muted }}>{item.range} · {item.duration}</div>
+                    </div>
+                    {item.categoryNote && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: theme.muted }}>
+                        과목 메모: {item.categoryNote}
+                      </div>
+                    )}
+                    {item.blockNote && (
+                      <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.45 }}>{item.blockNote}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <button
         onClick={() => window.location.reload()}
