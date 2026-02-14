@@ -580,12 +580,6 @@ export default function DayPage() {
   }, [showTodayMemoBoard]);
 
   useEffect(() => {
-    if (isToday) return;
-    if (!autoTrackCategoryId) return;
-    stopAutoTrack(true);
-  }, [isToday, autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs, day]);
-
-  useEffect(() => {
     if (!autoTrackCategoryId) return;
     setAutoTrackNowMs(Date.now());
     const id = window.setInterval(() => setAutoTrackNowMs(Date.now()), 1000);
@@ -725,9 +719,6 @@ export default function DayPage() {
 
   // ✅ 날짜 이동
   function moveDay(diff: number) {
-    if (autoTrackCategoryId) {
-      stopAutoTrack(true);
-    }
     setDay((prev) => addDays(prev, diff));
   }
 
@@ -965,7 +956,7 @@ function fmtMin(min: number) {
     const daySeconds = secondsByDay[day] ?? {};
     for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
     for (const b of actualBlocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
-    if (autoTrackCategoryId) {
+    if (autoTrackCategoryId && autoTrackDay === day) {
       totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
     }
     const totalMin = Object.entries(totals).reduce(
@@ -973,7 +964,7 @@ function fmtMin(min: number) {
       0
     );
     return { totals, totalMin };
-  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec, isStudyIncluded]);
+  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, autoTrackDay, runningElapsedSec, isStudyIncluded]);
 
   const todayMemoBoard = useMemo(() => {
     const categoryNotes = categories
@@ -1008,9 +999,11 @@ function fmtMin(min: number) {
   }, [categories, notesByCategory, notesByBlock, actualBlocks]);
 
   const baseSecondsByCategory = useMemo(() => {
-    const daySeconds = secondsByDay[day] ?? {};
+    const targetDay = autoTrackDay ?? day;
+    const daySeconds = secondsByDay[targetDay] ?? {};
+    const blocks = targetDay === day ? actualBlocks : (recordsByDay[targetDay]?.blocks ?? []);
     const fromBlocks: Record<string, number> = {};
-    for (const b of actualBlocks) {
+    for (const b of blocks) {
       fromBlocks[b.categoryId] = (fromBlocks[b.categoryId] ?? 0) + b.dur * 60;
     }
 
@@ -1019,7 +1012,7 @@ function fmtMin(min: number) {
       merged[id] = (merged[id] ?? 0) + sec;
     }
     return merged;
-  }, [secondsByDay, day, actualBlocks]);
+  }, [secondsByDay, day, actualBlocks, autoTrackDay, recordsByDay]);
 
   const autoTrackCumulativeSec = useMemo(() => {
     if (!autoTrackCategoryId) return 0;
@@ -1105,7 +1098,7 @@ function fmtMin(min: number) {
       for (const b of blocks) {
         totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
       }
-      if (d === day && autoTrackCategoryId) {
+      if (d === autoTrackDay && autoTrackCategoryId) {
         totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
       }
 
@@ -1136,6 +1129,7 @@ function fmtMin(min: number) {
     secondsByDay,
     autoTrackCategoryId,
     runningElapsedSec,
+    autoTrackDay,
     hiddenCategoryIds,
     hiddenTotal,
     isStudyIncluded,
@@ -1155,7 +1149,7 @@ function fmtMin(min: number) {
       for (const b of blocks) {
         totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
       }
-      if (d === day && autoTrackCategoryId) {
+      if (d === autoTrackDay && autoTrackCategoryId) {
         totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
       }
     }
@@ -1171,7 +1165,7 @@ function fmtMin(min: number) {
       .sort((a, b) => b.min - a.min);
 
     return { totalMin, rows };
-  }, [categories, investDates, day, actualBlocks, recordsByDay, secondsByDay, autoTrackCategoryId, runningElapsedSec]);
+  }, [categories, investDates, day, actualBlocks, recordsByDay, secondsByDay, autoTrackCategoryId, autoTrackDay, runningElapsedSec]);
 
   const theme = useMemo(
     () =>
