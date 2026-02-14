@@ -1222,9 +1222,12 @@ function fmtMin(min: number) {
 
     if (flush && targetCategoryId && flushSec > 0) {
       if (startedAt != null) {
-        const startMin = clamp(min03FromMsForDay(targetDay, startedAt), 0, 1439.9999);
-        const endMin = clamp(min03FromMsForDay(targetDay, endedAt), 0, 1440);
-        const dur = Math.max(1 / 60, endMin - startMin);
+        // Persist timer blocks at 1-second resolution to avoid long float tails.
+        const startSec = clamp(Math.round(min03FromMsForDay(targetDay, startedAt) * 60), 0, 24 * 60 * 60 - 1);
+        const endSecRaw = clamp(Math.round(min03FromMsForDay(targetDay, endedAt) * 60), 0, 24 * 60 * 60);
+        const endSec = Math.max(startSec + 1, endSecRaw);
+        const startMin = startSec / 60;
+        const dur = (endSec - startSec) / 60;
         const timerBlock: Block = {
           id: uuid(),
           start: startMin,
