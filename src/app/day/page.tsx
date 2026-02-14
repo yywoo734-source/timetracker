@@ -2666,6 +2666,7 @@ function fmtMin(min: number) {
                     viewBox={`0 0 ${W} ${H}`}
                     preserveAspectRatio="xMidYMid meet"
                     style={{ display: "block" }}
+                    onMouseEnter={() => setHoverIndex(null)}
                     onMouseLeave={() => setTotalHoverIndex(null)}
                     onMouseMove={(e) => {
                       const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -2695,8 +2696,10 @@ function fmtMin(min: number) {
                     <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
                   ))}
 
+                  {/* 총 추이도 날짜 축이 보이도록 축/라벨 고정 */}
+                  <line x1={padL} x2={W - padR} y1={H - padB} y2={H - padB} stroke={theme.grid} />
                   {days.map((d, i) => {
-                    const show = n <= 7 ? true : i === 0 || i === n - 1 || i % 2 === 0;
+                    const show = n <= 9 ? true : i === 0 || i === Math.floor((n - 1) / 2) || i === n - 1;
                     if (!show) return null;
                     return (
                       <text
@@ -2713,14 +2716,22 @@ function fmtMin(min: number) {
                   })}
 
                   {totalHoverIndex != null && (
-                    <line
-                      x1={xAt(totalHoverIndex)}
-                      x2={xAt(totalHoverIndex)}
-                      y1={padT}
-                      y2={H - padB}
-                      stroke={theme.axis}
-                      strokeDasharray="4 4"
-                    />
+                    <g>
+                      <line
+                        x1={xAt(totalHoverIndex)}
+                        x2={xAt(totalHoverIndex)}
+                        y1={padT}
+                        y2={H - padB}
+                        stroke={theme.axis}
+                        strokeDasharray="4 4"
+                      />
+                      <circle
+                        cx={xAt(totalHoverIndex)}
+                        cy={y(values[totalHoverIndex] ?? 0)}
+                        r={5}
+                        fill={theme.controlActiveBg}
+                      />
+                    </g>
                   )}
                   </svg>
 
@@ -2851,6 +2862,7 @@ function fmtMin(min: number) {
                     height={H}
                     viewBox={`0 0 ${W} ${H}`}
                     preserveAspectRatio="xMidYMid meet"
+                    onMouseEnter={() => setTotalHoverIndex(null)}
                     onMouseLeave={() => setHoverIndex(null)}
                     onMouseMove={(e) => {
                       const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
