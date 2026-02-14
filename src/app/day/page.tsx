@@ -957,8 +957,9 @@ function fmtMin(min: number) {
   }
 
   function fmtElapsed(sec: number) {
-    const s = sec % 60;
-    const totalMin = Math.floor(sec / 60);
+    const wholeSec = Math.max(0, Math.round(sec));
+    const s = wholeSec % 60;
+    const totalMin = Math.floor(wholeSec / 60);
     const m = totalMin % 60;
     const h = Math.floor(totalMin / 60);
     return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
@@ -1036,7 +1037,7 @@ function fmtMin(min: number) {
     const blocks = targetDay === day ? actualBlocks : (recordsByDay[targetDay]?.blocks ?? []);
     const fromBlocks: Record<string, number> = {};
     for (const b of blocks) {
-      fromBlocks[b.categoryId] = (fromBlocks[b.categoryId] ?? 0) + b.dur * 60;
+      fromBlocks[b.categoryId] = (fromBlocks[b.categoryId] ?? 0) + Math.round(b.dur * 60);
     }
 
     const merged: Record<string, number> = { ...daySeconds };
