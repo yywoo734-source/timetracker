@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const START_OFFSET_MIN = 180; // 03:00
@@ -27,6 +28,7 @@ type Block = {
 };
 
 const CATEGORIES_KEY = "timetracker_categories_v1";
+const AUTO_TRACK_KEY_PREFIX = "timetracker_auto_track_v1";
 
 function uuid() {
   return globalThis.crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}`;
@@ -261,6 +263,7 @@ export default function DayPage() {
   const [recordsByDay, setRecordsByDay] = useState<Record<string, DayRecord>>({});
   const [secondsByDay, setSecondsByDay] = useState<Record<string, Record<string, number>>>({});
   const [showAdminLinks, setShowAdminLinks] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [currentUserName, setCurrentUserName] = useState<string>("");
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
 
@@ -308,7 +311,11 @@ export default function DayPage() {
         setCurrentUserEmail(data.user.email ?? "");
 
         const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token;
+        let token = session.data.session?.access_token ?? null;
+        if (!token) {
+          const refreshed = await supabase.auth.refreshSession();
+          token = refreshed.data.session?.access_token ?? null;
+        }
         setAccessToken(token ?? null);
         const res = await fetch("/api/me", {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -319,23 +326,92 @@ export default function DayPage() {
             router.replace("/pending");
             return;
           }
+          setCurrentUserId(String(body.user?.id ?? ""));
           setCurrentUserName(String(body.user?.name ?? ""));
           setCurrentUserEmail(String(body.user?.email ?? data.user.email ?? ""));
           const email = String(body.user?.email ?? "").toLowerCase();
           setShowAdminLinks(email === "yywoo7@naver.com");
         }
 
+        const { data: authListener } = supabase.auth.onAuthStateChange(
+          (_event: AuthChangeEvent, sessionNow: Session | null) => {
+          setAccessToken(sessionNow?.access_token ?? null);
+          }
+        );
+
         if (!cancelled) setAuthReady(true);
+        return () => {
+          authListener.subscription.unsubscribe();
+        };
       } catch {
         if (!cancelled) router.replace("/login");
       }
     }
 
-    checkAuth();
+    let unsub: undefined | (() => void);
+    checkAuth().then((cleanup) => {
+      unsub = cleanup;
+    });
     return () => {
       cancelled = true;
+      unsub?.();
     };
   }, [router]);
+
+  const autoTrackStorageKey = useMemo(() => {
+    if (!currentUserId) return null;
+    return `${AUTO_TRACK_KEY_PREFIX}:${currentUserId}`;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!autoTrackStorageKey) return;
+    if (autoTrackCategoryId) return;
+
+    const raw = localStorage.getItem(autoTrackStorageKey);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        categoryId?: string;
+        day?: string;
+        startedAtMs?: number;
+      };
+      if (!parsed.categoryId || !parsed.day || typeof parsed.startedAtMs !== "number") {
+        localStorage.removeItem(autoTrackStorageKey);
+        return;
+      }
+
+      // 새벽 경계 기준으로 "오늘" 데이터에서만 자동기록 복원
+      if (parsed.day !== isoDayKey03()) {
+        localStorage.removeItem(autoTrackStorageKey);
+        return;
+      }
+
+      setAutoTrackCategoryId(parsed.categoryId);
+      setAutoTrackDay(parsed.day);
+      autoTrackStartedAtMsRef.current = parsed.startedAtMs;
+      setAutoTrackStartedAtMs(parsed.startedAtMs);
+      setAutoTrackNowMs(Date.now());
+    } catch {
+      localStorage.removeItem(autoTrackStorageKey);
+    }
+  }, [autoTrackStorageKey, autoTrackCategoryId]);
+
+  useEffect(() => {
+    if (!autoTrackStorageKey) return;
+    if (autoTrackCategoryId && autoTrackStartedAtMs != null) {
+      localStorage.setItem(
+        autoTrackStorageKey,
+        JSON.stringify({
+          categoryId: autoTrackCategoryId,
+          day: autoTrackDay ?? day,
+          startedAtMs: autoTrackStartedAtMs,
+        })
+      );
+      return;
+    }
+    localStorage.removeItem(autoTrackStorageKey);
+  }, [autoTrackStorageKey, autoTrackCategoryId, autoTrackDay, autoTrackStartedAtMs, day]);
 
   const clearAllRecords = useCallback(async () => {
     if (!confirm("모든 날짜의 기록을 정말 삭제할까?")) return;

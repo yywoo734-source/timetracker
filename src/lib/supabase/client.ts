@@ -18,5 +18,11 @@ export function createSupabaseBrowserClient() {
     throw new Error("Missing Supabase env vars for browser client.");
   }
 
-  return createBrowserClient(url, anonKey);
+  return createBrowserClient(url, anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
 }
