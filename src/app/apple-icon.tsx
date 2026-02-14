@@ -30,6 +30,9 @@ export default function AppleIcon() {
             borderRadius: 999,
             border: "10px solid #f8fafc",
             position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
           }}
         >
