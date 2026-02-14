@@ -1599,14 +1599,44 @@ function fmtMin(min: number) {
       >
         <button
           onClick={() => moveDay(-1)}
-          style={{ border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.controlBg, color: theme.controlText }}
+          style={{
+            minWidth: 48,
+            minHeight: 44,
+            padding: "0 12px",
+            border: `1px solid ${theme.border}`,
+            borderRadius: 12,
+            background: theme.controlBg,
+            color: theme.controlText,
+            fontSize: 18,
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: theme.buttonShadow,
+            touchAction: "manipulation",
+          }}
+          aria-label="이전 날짜"
+          title="이전 날짜"
         >
           ◀
         </button>
-        <strong>{day}</strong>
+        <strong style={{ fontSize: 24, lineHeight: 1 }}>{day}</strong>
         <button
           onClick={() => moveDay(1)}
-          style={{ border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.controlBg, color: theme.controlText }}
+          style={{
+            minWidth: 48,
+            minHeight: 44,
+            padding: "0 12px",
+            border: `1px solid ${theme.border}`,
+            borderRadius: 12,
+            background: theme.controlBg,
+            color: theme.controlText,
+            fontSize: 18,
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: theme.buttonShadow,
+            touchAction: "manipulation",
+          }}
+          aria-label="다음 날짜"
+          title="다음 날짜"
         >
           ▶
         </button>
