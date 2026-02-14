@@ -2676,6 +2676,24 @@ function fmtMin(min: number) {
                       const idx = Math.round((mx - padL) / (xStep || 1));
                       setTotalHoverIndex(Math.max(0, Math.min(idx, n - 1)));
                     }}
+                    onTouchStart={(e) => {
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const tx = e.touches[0]?.clientX;
+                      if (typeof tx !== "number") return;
+                      const mx = ((tx - rect.left) / rect.width) * W;
+                      if (mx < padL || mx > W - padR) return;
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setTotalHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
+                    onTouchMove={(e) => {
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const tx = e.touches[0]?.clientX;
+                      if (typeof tx !== "number") return;
+                      const mx = ((tx - rect.left) / rect.width) * W;
+                      if (mx < padL || mx > W - padR) return;
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setTotalHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
                   >
                   {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
                     const v = yMax * p;
@@ -2757,6 +2775,23 @@ function fmtMin(min: number) {
                       <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>{fmtMin(tooltip.value)}</div>
                     </div>
                   )}
+                </div>
+              );
+            })()}
+            {(() => {
+              const days = trend.totalsByDay;
+              const selectedCategory = categories.find((c) => c.id === activeCategoryId);
+              const values = days.map((d) =>
+                totalTrendMode === "selected" && selectedCategory
+                  ? (d.totals[selectedCategory.id] ?? 0)
+                  : d.totalMin
+              );
+              const idx = totalHoverIndex != null ? totalHoverIndex : Math.max(0, days.length - 1);
+              const focusDay = days[idx];
+              if (!focusDay) return null;
+              return (
+                <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>
+                  {fmtDayLabel(focusDay.day)} · {totalTrendMode === "selected" ? "선택 과목" : "총 공부시간"} {fmtMin(values[idx] ?? 0)}
                 </div>
               );
             })()}
@@ -2869,6 +2904,25 @@ function fmtMin(min: number) {
                       const mx = ((e.clientX - rect.left) / rect.width) * W;
                       if (mx < padL || mx > W - padR) return;
 
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
+                    onTouchStart={(e) => {
+                      setTotalHoverIndex(null);
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const tx = e.touches[0]?.clientX;
+                      if (typeof tx !== "number") return;
+                      const mx = ((tx - rect.left) / rect.width) * W;
+                      if (mx < padL || mx > W - padR) return;
+                      const idx = Math.round((mx - padL) / (xStep || 1));
+                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                    }}
+                    onTouchMove={(e) => {
+                      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+                      const tx = e.touches[0]?.clientX;
+                      if (typeof tx !== "number") return;
+                      const mx = ((tx - rect.left) / rect.width) * W;
+                      if (mx < padL || mx > W - padR) return;
                       const idx = Math.round((mx - padL) / (xStep || 1));
                       setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
                     }}
