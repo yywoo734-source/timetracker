@@ -727,6 +727,7 @@ export default function DayPage() {
   const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
   const [totalTrendMode, setTotalTrendMode] = useState<"total" | "selected">("total");
   const [investRange, setInvestRange] = useState<"day" | "week" | "month">("day");
+  const [studyIncludedCategoryIds, setStudyIncludedCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -853,6 +854,19 @@ function fmtMin(min: number) {
     return Math.max(0, Math.floor((autoTrackNowMs - autoTrackStartedAtMs) / 1000));
   }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs]);
 
+  useEffect(() => {
+    setStudyIncludedCategoryIds((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const c of categories) next[c.id] = prev[c.id] ?? true;
+      return next;
+    });
+  }, [categories]);
+
+  const isStudyIncluded = useCallback(
+    (categoryId: string) => studyIncludedCategoryIds[categoryId] !== false,
+    [studyIncludedCategoryIds]
+  );
+
   // ✅ 요약(카테고리별)
   const summary = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -862,9 +876,12 @@ function fmtMin(min: number) {
     if (autoTrackCategoryId) {
       totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
     }
-    const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
+    const totalMin = Object.entries(totals).reduce(
+      (acc, [categoryId, min]) => (isStudyIncluded(categoryId) ? acc + min : acc),
+      0
+    );
     return { totals, totalMin };
-  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec]);
+  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, runningElapsedSec, isStudyIncluded]);
 
   const baseSecondsByCategory = useMemo(() => {
     const daySeconds = secondsByDay[day] ?? {};
@@ -962,7 +979,10 @@ function fmtMin(min: number) {
         totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
       }
 
-      const totalMin = Object.values(totals).reduce((a, b) => a + b, 0);
+      const totalMin = Object.entries(totals).reduce(
+        (acc, [categoryId, min]) => (isStudyIncluded(categoryId) ? acc + min : acc),
+        0
+      );
       totalsByDay.push({ day: d, totals, totalMin });
     }
 
@@ -988,6 +1008,7 @@ function fmtMin(min: number) {
     runningElapsedSec,
     hiddenCategoryIds,
     hiddenTotal,
+    isStudyIncluded,
   ]);
 
   const investSummary = useMemo(() => {
@@ -2340,6 +2361,47 @@ function fmtMin(min: number) {
                   {d}일
                 </button>
               ))}
+            </div>
+
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {categories.map((c) => {
+                const included = studyIncludedCategoryIds[c.id] !== false;
+                return (
+                  <button
+                    key={`study-inc-${c.id}`}
+                    onClick={() =>
+                      setStudyIncludedCategoryIds((prev) => ({
+                        ...prev,
+                        [c.id]: !(prev[c.id] !== false),
+                      }))
+                    }
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: `1px solid ${theme.border}`,
+                      background: included ? theme.controlActiveBg : theme.controlBg,
+                      color: included ? theme.controlActiveText : theme.controlText,
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                    title={included ? "총 공부시간에 포함됨" : "총 공부시간에서 제외됨"}
+                  >
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 999,
+                        background: c.color,
+                        border: "1px solid rgba(0,0,0,0.18)",
+                      }}
+                    />
+                    {included ? "✓ " : ""}{c.label}
+                  </button>
+                );
+              })}
             </div>
 
             {(() => {
