@@ -292,6 +292,7 @@ export default function DayPage() {
   const autoTrackStartedAtMsRef = useRef<number | null>(null);
   const [autoTrackStartedAtMs, setAutoTrackStartedAtMs] = useState<number | null>(null);
   const [autoTrackNowMs, setAutoTrackNowMs] = useState<number>(Date.now());
+  const autoTrackHydratedKeyRef = useRef<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
@@ -365,6 +366,8 @@ export default function DayPage() {
 
   useEffect(() => {
     if (!autoTrackStorageKey) return;
+    if (autoTrackHydratedKeyRef.current === autoTrackStorageKey) return;
+    autoTrackHydratedKeyRef.current = autoTrackStorageKey;
     if (autoTrackCategoryId) return;
 
     const raw = localStorage.getItem(autoTrackStorageKey);
@@ -722,6 +725,9 @@ export default function DayPage() {
 
   // ✅ 날짜 이동
   function moveDay(diff: number) {
+    if (autoTrackCategoryId) {
+      stopAutoTrack(true);
+    }
     setDay((prev) => addDays(prev, diff));
   }
 
@@ -1256,6 +1262,9 @@ function fmtMin(min: number) {
     setAutoTrackDay(null);
     autoTrackStartedAtMsRef.current = null;
     setAutoTrackStartedAtMs(null);
+    if (autoTrackStorageKey) {
+      localStorage.removeItem(autoTrackStorageKey);
+    }
   }
 
   function toggleCategoryVisible(id: string) {
