@@ -846,6 +846,7 @@ export default function DayPage() {
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [totalHoverIndex, setTotalHoverIndex] = useState<number | null>(null);
 
   const trendDates = useMemo(() => {
     // 현재 보고 있는 day를 기준으로 과거 (trendDays-1)일 + 오늘(총 trendDays)
@@ -1872,7 +1873,7 @@ function fmtMin(min: number) {
       </div>
 
       {/* 분 가늠용 헤더 */}
-      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: isNarrow ? "auto" : "visible" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: "visible" }}>
         <div style={{ width: 80 }} />
         <div
           style={{
@@ -1914,7 +1915,7 @@ function fmtMin(min: number) {
           }}
         >
           {/* 시간 라벨 + 격자 */}
-          <div style={{ display: "flex", gap: 12, overflowX: isNarrow ? "auto" : "visible", paddingBottom: isNarrow ? 4 : 0 }}>
+          <div style={{ display: "flex", gap: 12, overflowX: "visible", paddingBottom: isNarrow ? 4 : 0 }}>
             {/* 시간 라벨 */}
             <div style={{ width: 80, fontSize: 11, opacity: 0.65 }}>
               <div style={{ height: 8 }} />
@@ -2622,7 +2623,7 @@ function fmtMin(min: number) {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 560;
+              const W = 560;
               const H = 320;
               const padL = 50;
               const padR = 20;
@@ -2647,22 +2648,32 @@ function fmtMin(min: number) {
 
               const points = values.map((v, i) => `${xAt(i)},${y(v)}`).join(" ");
 
+              const tooltip =
+                totalHoverIndex == null
+                  ? null
+                  : {
+                      day: days[totalHoverIndex]?.day,
+                      value: values[totalHoverIndex] ?? 0,
+                      x: xAt(totalHoverIndex),
+                    };
+              const tooltipLeft = tooltip ? clamp(tooltip.x - 90, 8, W - 180) : 0;
+
               return (
-                <div style={{ marginTop: 16, overflowX: isNarrow ? "auto" : "hidden" }}>
+                <div style={{ marginTop: 16, position: "relative", overflow: "hidden" }}>
                   <svg
-                    width={isNarrow ? W : "100%"}
+                    width="100%"
                     height={H}
                     viewBox={`0 0 ${W} ${H}`}
                     preserveAspectRatio="xMidYMid meet"
-                    style={{ display: "block", minWidth: isNarrow ? W : undefined }}
-                    onMouseLeave={() => setHoverIndex(null)}
+                    style={{ display: "block" }}
+                    onMouseLeave={() => setTotalHoverIndex(null)}
                     onMouseMove={(e) => {
                       const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
                       const mx = ((e.clientX - rect.left) / rect.width) * W;
                       if (mx < padL || mx > W - padR) return;
 
                       const idx = Math.round((mx - padL) / (xStep || 1));
-                      setHoverIndex(Math.max(0, Math.min(idx, n - 1)));
+                      setTotalHoverIndex(Math.max(0, Math.min(idx, n - 1)));
                     }}
                   >
                   {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
@@ -2684,10 +2695,27 @@ function fmtMin(min: number) {
                     <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
                   ))}
 
-                  {hoverIndex != null && (
+                  {days.map((d, i) => {
+                    const show = n <= 7 ? true : i === 0 || i === n - 1 || i % 2 === 0;
+                    if (!show) return null;
+                    return (
+                      <text
+                        key={d.day}
+                        x={xAt(i)}
+                        y={H - 16}
+                        fontSize={11}
+                        fill={theme.axis}
+                        textAnchor="middle"
+                      >
+                        {fmtDayLabel(d.day)}
+                      </text>
+                    );
+                  })}
+
+                  {totalHoverIndex != null && (
                     <line
-                      x1={xAt(hoverIndex)}
-                      x2={xAt(hoverIndex)}
+                      x1={xAt(totalHoverIndex)}
+                      x2={xAt(totalHoverIndex)}
                       y1={padT}
                       y2={H - padB}
                       stroke={theme.axis}
@@ -2695,6 +2723,29 @@ function fmtMin(min: number) {
                     />
                   )}
                   </svg>
+
+                  {tooltip && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        left: tooltipLeft,
+                        width: 180,
+                        border: `1px solid ${theme.border}`,
+                        background: themeMode === "dark" ? "rgba(17,24,39,0.97)" : "rgba(255,255,255,0.98)",
+                        borderRadius: 12,
+                        padding: 10,
+                        boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: 12 }}>{fmtDayLabel(tooltip.day ?? day)}</div>
+                      <div style={{ marginTop: 6, fontSize: 12, color: theme.muted }}>
+                        {totalTrendMode === "selected" ? "선택 과목" : "총 공부시간"}
+                      </div>
+                      <div style={{ marginTop: 4, fontWeight: 800, fontSize: 13 }}>{fmtMin(tooltip.value)}</div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -2717,7 +2768,7 @@ function fmtMin(min: number) {
             </div>
 
             {(() => {
-              const W = isNarrow ? 760 : 560;
+              const W = 560;
               const H = 360;
               const padL = 50;
               const padR = 20;
@@ -2754,7 +2805,7 @@ function fmtMin(min: number) {
                   style={{
                     marginTop: 14,
                     position: "relative",
-                    overflowX: isNarrow ? "auto" : "hidden",
+                    overflow: "hidden",
                   }}
                 >
                   {/* 범례(카테고리 칩) */}
@@ -2796,7 +2847,7 @@ function fmtMin(min: number) {
                   </div>
 
                   <svg
-                    width={isNarrow ? W : "100%"}
+                    width="100%"
                     height={H}
                     viewBox={`0 0 ${W} ${H}`}
                     preserveAspectRatio="xMidYMid meet"
