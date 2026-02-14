@@ -910,7 +910,7 @@ function fmtMin(min: number) {
       const results = await Promise.all(
         daysToLoad.map(async (d) => {
           const res = await fetch(`/api/records?day=${d}`, { headers });
-          if (!res.ok) return [d, EMPTY_RECORD] as const;
+          if (!res.ok) return null;
           const body = await res.json();
           const rawCategories = body.record?.categories;
           const parsedSeconds =
@@ -944,12 +944,18 @@ function fmtMin(min: number) {
       if (!cancelled) {
         setRecordsByDay((prev) => {
           const next = { ...prev };
-          for (const [d, record] of results) next[d] = record;
+          for (const item of results) {
+            if (!item) continue;
+            const [d, record] = item;
+            next[d] = record;
+          }
           return next;
         });
         setSecondsByDay((prev) => {
           const next = { ...prev };
-          for (const [d, record] of results) {
+          for (const item of results) {
+            if (!item) continue;
+            const [d, record] = item;
             next[d] = record.secondsByCategory ?? {};
           }
           return next;
@@ -2113,7 +2119,14 @@ function fmtMin(min: number) {
 
               {showNotes && (
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(showAllNotes ? categories : categories.filter((c) => (summary.totals[c.id] ?? 0) > 0)).map((c) => (
+                  {(showAllNotes
+                    ? categories
+                    : categories.filter((c) => {
+                        const hasTime = (summary.totals[c.id] ?? 0) > 0;
+                        const hasMemo = (notesByCategory[c.id] ?? "").trim().length > 0;
+                        return hasTime || hasMemo;
+                      })
+                  ).map((c) => (
                     <div
                       key={c.id}
                       style={{
