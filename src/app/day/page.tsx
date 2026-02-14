@@ -15,6 +15,8 @@ const ROWS = 24;
 const CELL = 22;
 const GRID_W = COLS * CELL;
 const GRID_H = ROWS * CELL;
+const AUTO_TRACK_MIN_SAVE_SEC = 10;
+const AUTO_TRACK_RESUME_GAP_SEC = 10;
 
 type Category = { id: string; label: string; color: string };
 type SlotSegment = { start: number; end: number; color: string };
@@ -129,6 +131,36 @@ function applyBlock(blocks: Block[], incoming: Omit<Block, "id"> & { id?: string
   }
 
   return merged.filter((b) => b.dur > EPS);
+}
+
+function mergeSameCategoryNearBlocks(blocks: Block[], maxGapMin: number) {
+  const EPS = 1e-6;
+  const sorted = [...blocks].sort((a, b) => a.start - b.start);
+  const merged: Block[] = [];
+
+  for (const b of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last) {
+      merged.push({ ...b });
+      continue;
+    }
+
+    const lastEnd = last.start + last.dur;
+    const gap = b.start - lastEnd;
+    if (last.categoryId === b.categoryId && gap <= maxGapMin + EPS) {
+      const end = Math.max(lastEnd, b.start + b.dur);
+      last.dur = end - last.start;
+    } else {
+      merged.push({ ...b });
+    }
+  }
+
+  return merged.filter((b) => b.dur > EPS);
+}
+
+function applyTimerBlock(blocks: Block[], timerBlock: Block) {
+  const withBlock = applyBlock(blocks, timerBlock);
+  return mergeSameCategoryNearBlocks(withBlock, AUTO_TRACK_RESUME_GAP_SEC / 60);
 }
 
 function snapIndexFromPoint(clientY: number, clientX: number, top: number, left: number) {
@@ -1220,7 +1252,7 @@ function fmtMin(min: number) {
         : 0;
     const flushSec = Math.max(runningElapsedSec, liveElapsedSec);
 
-    if (flush && targetCategoryId && flushSec > 0) {
+    if (flush && targetCategoryId && flushSec >= AUTO_TRACK_MIN_SAVE_SEC) {
       if (startedAt != null) {
         // Persist timer blocks at 1-second resolution to avoid long float tails.
         const startSec = clamp(Math.round(min03FromMsForDay(targetDay, startedAt) * 60), 0, 24 * 60 * 60 - 1);
@@ -1236,7 +1268,7 @@ function fmtMin(min: number) {
         };
 
         if (targetDay === day) {
-          setActualBlocks((prev) => applyBlock(prev, timerBlock));
+          setActualBlocks((prev) => applyTimerBlock(prev, timerBlock));
         } else {
           setRecordsByDay((prev) => {
             const existing = prev[targetDay] ?? EMPTY_RECORD;
@@ -1244,7 +1276,7 @@ function fmtMin(min: number) {
               ...prev,
               [targetDay]: {
                 ...existing,
-                blocks: applyBlock(existing.blocks, timerBlock),
+                blocks: applyTimerBlock(existing.blocks, timerBlock),
                 notesByCategory: existing.notesByCategory ?? {},
                 notesByBlock: existing.notesByBlock ?? {},
                 secondsByCategory: existing.secondsByCategory ?? {},
