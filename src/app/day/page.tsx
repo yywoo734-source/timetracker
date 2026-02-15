@@ -232,7 +232,7 @@ function min03FromMsForDay(dayIso: string, ms: number) {
 }
 
 function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
-  if (segments.length === 0) return "transparent";
+  if (segments.length === 0) return baseColor;
 
   const sorted = [...segments]
     .map((seg) => ({
@@ -243,7 +243,7 @@ function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
     .filter((seg) => seg.end > seg.start)
     .sort((a, b) => a.start - b.start);
 
-  if (sorted.length === 0) return "transparent";
+  if (sorted.length === 0) return baseColor;
 
   const stops: string[] = [];
   let cursor = 0;
@@ -600,6 +600,16 @@ export default function DayPage() {
   useEffect(() => {
     localStorage.setItem(THEME_KEY, themeMode);
     document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
+
+  useEffect(() => {
+    // Theme switch during interaction can leave transient selection paint artifacts.
+    setDragStart(null);
+    setDragEnd(null);
+    dragStartRef.current = null;
+    isDraggingRef.current = false;
+    isErasingRef.current = false;
+    isPinchingRef.current = false;
   }, [themeMode]);
 
   useEffect(() => {
@@ -2140,6 +2150,7 @@ function fmtMin(min: number) {
               )}
 
               <div
+                key={`grid-${themeMode}`}
                 style={{
                   display: "grid",
                   gridTemplateColumns: `repeat(${COLS}, ${CELL}px)`,
