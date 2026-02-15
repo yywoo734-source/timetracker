@@ -1491,7 +1491,7 @@ function fmtMin(min: number) {
         margin: "0 auto",
         background: theme.bg,
         color: theme.text,
-        minHeight: "100vh",
+        minHeight: "100dvh",
       }}
     >
       <div
@@ -1570,6 +1570,9 @@ function fmtMin(min: number) {
             display: "flex",
             alignItems: "center",
             gap: 8,
+            minWidth: 84,
+            justifyContent: "flex-end",
+            fontVariantNumeric: "tabular-nums",
           }}
         >
           <span
@@ -1713,8 +1716,9 @@ function fmtMin(min: number) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
-              padding: "4px 10px",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "6px 10px",
               borderRadius: 999,
               background:
                 autoTrackCategoryId === c.id
@@ -1724,6 +1728,9 @@ function fmtMin(min: number) {
               color: autoTrackCategoryId === c.id ? "#fff" : theme.text,
               cursor: "pointer",
               boxShadow: theme.buttonShadow,
+              minWidth: isNarrow ? 142 : 156,
+              fontVariantNumeric: "tabular-nums",
+              whiteSpace: "nowrap",
             }}
             title={
               autoTrackCategoryId === c.id
@@ -1740,10 +1747,13 @@ function fmtMin(min: number) {
                 display: "inline-block",
               }}
             />
-            <span style={{ fontSize: 13 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, opacity: autoTrackCategoryId === c.id ? 1 : 0.92 }}>
+              {c.label}
+            </span>
+            <span style={{ fontSize: 12, opacity: autoTrackCategoryId === c.id ? 1 : 0.78 }}>
               {autoTrackCategoryId === c.id
-                ? `${c.label}: ${fmtElapsed(autoTrackCumulativeSec)}`
-                : `${c.label}: ${fmtMin(summary.totals[c.id] ?? 0)}`}
+                ? fmtElapsed(autoTrackCumulativeSec)
+                : fmtMin(summary.totals[c.id] ?? 0)}
             </span>
           </button>
         ))}
