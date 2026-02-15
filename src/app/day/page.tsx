@@ -1951,7 +1951,10 @@ function fmtMin(min: number) {
                 background: theme.card,
                 boxShadow: `${theme.panelShadow}, ${theme.surfaceGlow}`,
                 userSelect: "none",
-                touchAction: "pinch-zoom",
+                WebkitUserSelect: "none",
+                WebkitTouchCallout: "none",
+                overscrollBehavior: "contain",
+                touchAction: "none",
               }}
               onMouseDown={(e) => {
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -2005,6 +2008,7 @@ function fmtMin(min: number) {
                 isErasingRef.current = false;
               }}
               onTouchStart={(e) => {
+                e.preventDefault();
                 if (e.touches.length > 1) {
                   isPinchingRef.current = true;
                   suppressClickUntilRef.current = Date.now() + 500;
@@ -2029,6 +2033,7 @@ function fmtMin(min: number) {
                 dragStartRef.current = idx;
               }}
               onTouchMove={(e) => {
+                e.preventDefault();
                 if (e.touches.length > 1 || isPinchingRef.current) {
                   isPinchingRef.current = true;
                   suppressClickUntilRef.current = Date.now() + 500;
