@@ -158,6 +158,109 @@ export default function WeeklyPage() {
     setLoadingFeedback(false);
   }
 
+  function escapeHtml(text: string) {
+    return text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function exportPdf() {
+    if (!report) return;
+    const win = window.open("", "_blank", "width=900,height=1200");
+    if (!win) return;
+
+    const categoryRows = report.categories
+      .map(
+        (c) => `
+          <tr>
+            <td>${escapeHtml(c.label)}</td>
+            <td>${escapeHtml(fmtMin(c.minutes))}</td>
+            <td>${escapeHtml(fmtMin(c.prevMinutes))}</td>
+            <td>${escapeHtml(fmtSignedMin(c.deltaMinutes))}</td>
+            <td>${c.memoCount}개</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const memoRows =
+      report.memos.length === 0
+        ? `<div class="muted">메모가 없습니다.</div>`
+        : report.memos
+            .slice(0, 50)
+            .map(
+              (m) => `
+              <div class="memo">
+                <div class="meta">${escapeHtml(m.day)} · ${escapeHtml(m.categoryLabel)}</div>
+                <div>${escapeHtml(m.text)}</div>
+              </div>
+            `
+            )
+            .join("");
+
+    const feedbackText = feedback
+      ? `<pre>${escapeHtml(feedback)}</pre>`
+      : `<div class="muted">피드백이 아직 생성되지 않았습니다.</div>`;
+
+    const html = `
+      <!doctype html>
+      <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <title>주간 리포트 ${report.weekStart}~${report.weekEnd}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 24px; color: #111; }
+          h1 { margin: 0 0 6px 0; font-size: 24px; }
+          h2 { margin: 20px 0 8px 0; font-size: 16px; }
+          .muted { color: #666; font-size: 13px; }
+          .summary { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 8px; margin-top: 12px; }
+          .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+          th, td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; }
+          .memo { border: 1px solid #eee; border-radius: 8px; padding: 8px; margin-top: 8px; }
+          .meta { font-size: 12px; color: #666; margin-bottom: 4px; }
+          pre { white-space: pre-wrap; line-height: 1.5; font-size: 13px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fafafa; }
+          @page { size: A4; margin: 14mm; }
+        </style>
+      </head>
+      <body>
+        <h1>주간 리포트</h1>
+        <div class="muted">기간: ${report.weekStart} ~ ${report.weekEnd}</div>
+        <div class="summary">
+          <div class="card"><div class="muted">총 공부시간</div><div><b>${escapeHtml(fmtMin(report.totalMinutes))}</b></div></div>
+          <div class="card"><div class="muted">전주 대비</div><div><b>${escapeHtml(fmtSignedMin(report.deltaTotalMinutes))}</b></div></div>
+          <div class="card"><div class="muted">메모 수</div><div><b>${report.memos.length}개</b></div></div>
+        </div>
+
+        <h2>과목별 동향</h2>
+        <table>
+          <thead>
+            <tr><th>과목</th><th>이번 주</th><th>지난 주</th><th>증감</th><th>메모</th></tr>
+          </thead>
+          <tbody>${categoryRows}</tbody>
+        </table>
+
+        <h2>AI 피드백</h2>
+        ${feedbackText}
+
+        <h2>메모 요약</h2>
+        ${memoRows}
+      </body>
+      </html>
+    `;
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+    }, 250);
+  }
+
   if (loading) {
     return <div style={{ maxWidth: 960, margin: "40px auto", padding: 20 }}>로딩 중...</div>;
   }
@@ -186,6 +289,9 @@ export default function WeeklyPage() {
           />
           <button onClick={() => router.push("/day")} style={{ padding: "6px 10px" }}>
             day 페이지
+          </button>
+          <button onClick={exportPdf} style={{ padding: "6px 10px" }}>
+            PDF 저장
           </button>
         </div>
       </div>
