@@ -15,6 +15,8 @@ const ROWS = 24;
 const CELL = 22;
 const GRID_W = COLS * CELL;
 const GRID_H = ROWS * CELL;
+const TIME_LABEL_W = 64;
+const GRID_LABEL_GAP = 4;
 const AUTO_TRACK_MIN_SAVE_SEC = 10;
 const AUTO_TRACK_RESUME_GAP_SEC = 10;
 
@@ -1901,8 +1903,8 @@ function fmtMin(min: number) {
       </div>
 
       {/* 분 가늠용 헤더 */}
-      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 8, overflowX: "visible" }}>
-        <div style={{ width: 80 }} />
+      <div style={{ display: "flex", gap: GRID_LABEL_GAP, alignItems: "end", marginTop: 8, overflowX: "visible" }}>
+        <div style={{ width: TIME_LABEL_W }} />
         <div
           style={{
             width: GRID_W,
@@ -1943,9 +1945,9 @@ function fmtMin(min: number) {
           }}
         >
           {/* 시간 라벨 + 격자 */}
-          <div style={{ display: "flex", gap: 12, overflowX: "visible", paddingBottom: isNarrow ? 4 : 0 }}>
+          <div style={{ display: "flex", gap: GRID_LABEL_GAP, overflowX: "visible", paddingBottom: isNarrow ? 4 : 0 }}>
             {/* 시간 라벨 */}
-            <div style={{ width: 80, fontSize: 11, opacity: 0.65 }}>
+            <div style={{ width: TIME_LABEL_W, fontSize: 11, opacity: 0.75 }}>
               <div style={{ height: 8 }} />
               {Array.from({ length: ROWS }).map((_, r) => {
                 const active = nowRow === r;
@@ -1956,6 +1958,8 @@ function fmtMin(min: number) {
                       height: CELL,
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "flex-end",
+                      paddingRight: 4,
                       fontWeight: isToday && active ? 700 : 400,
                       color: isToday && active ? "#ef4444" : "inherit",
                       opacity: active ? 1 : 0.65,
@@ -2256,7 +2260,7 @@ function fmtMin(min: number) {
           <div
             style={{
               width: "100%",
-              maxWidth: isNarrow ? "none" : 80 + 12 + GRID_W,
+              maxWidth: isNarrow ? "none" : TIME_LABEL_W + GRID_LABEL_GAP + GRID_W,
               border: `1px solid ${theme.border}`,
               borderRadius: 14,
               background: theme.card,
