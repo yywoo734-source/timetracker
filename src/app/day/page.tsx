@@ -49,6 +49,14 @@ function labelFromIndex03(idxMin: number) {
   return `${isNextDay ? "다음날 " : ""}${pad2(h)}:${pad2(m)}`;
 }
 
+function labelFromIndex03Compact(idxMin: number) {
+  const roundedMin = Math.floor(idxMin);
+  const realMin = (roundedMin + START_OFFSET_MIN) % 1440;
+  const h = Math.floor(realMin / 60);
+  const m = realMin % 60;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
 function labelFromIndex03Sec(idxMin: number) {
   const roundedSec = Math.max(0, Math.round(idxMin * 60));
   const realSecBase = roundedSec + START_OFFSET_MIN * 60;
@@ -177,7 +185,7 @@ function snapIndexFromPoint(clientY: number, clientX: number, top: number, left:
 
 function timeLabelForRow(row: number) {
   const idxMin = row * 60;
-  return labelFromIndex03(idxMin);
+  return labelFromIndex03Compact(idxMin);
 }
 
 function loadCategories(): Category[] {
@@ -2200,7 +2208,7 @@ function fmtMin(min: number) {
                         borderBottom: `1px solid ${theme.borderSubtle}`,
                         background,
                       }}
-                      title={labelFromIndex03(i * 5)}
+                      title={labelFromIndex03Compact(i * 5)}
                       onClick={(e) => {
                         if (Date.now() < suppressClickUntilRef.current) return;
                         e.stopPropagation();
