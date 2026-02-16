@@ -1753,11 +1753,6 @@ function fmtMin(min: number) {
       >
         <div style={{ fontWeight: 700 }}>
           합계: {fmtMin(summary.totalMin)}
-          {autoTrackCategoryId && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: theme.muted, fontWeight: 600 }}>
-              자동 기록중
-            </span>
-          )}
         </div>
         {categories.map((c) => (
           <button
