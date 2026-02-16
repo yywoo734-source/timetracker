@@ -1956,10 +1956,11 @@ function fmtMin(min: number) {
                     key={r}
                     style={{
                       height: CELL,
-                      display: "flex",
+                      display: "grid",
                       alignItems: "center",
                       justifyContent: "flex-end",
                       paddingRight: 4,
+                      lineHeight: 1,
                       fontWeight: isToday && active ? 700 : 400,
                       color: isToday && active ? "#ef4444" : "inherit",
                       opacity: active ? 1 : 0.65,
