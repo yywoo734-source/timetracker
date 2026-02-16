@@ -1621,6 +1621,21 @@ function fmtMin(min: number) {
         >
           설정
         </button>
+        <button
+          onClick={() => router.push("/weekly")}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          주간 리포트
+        </button>
         {showAdminLinks && (
           <>
             <button
