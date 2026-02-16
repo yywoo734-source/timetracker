@@ -1668,6 +1668,21 @@ function fmtMin(min: number) {
             >
               학생 기록 보기
             </button>
+            <button
+              onClick={() => router.push("/admin/weekly")}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: `1px solid ${theme.border}`,
+                background: theme.controlBg,
+                color: theme.controlText,
+                cursor: "pointer",
+                fontSize: 13,
+                boxShadow: theme.buttonShadow,
+              }}
+            >
+              학생 주간 리포트
+            </button>
           </>
         )}
       </div>
