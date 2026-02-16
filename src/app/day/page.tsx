@@ -1961,6 +1961,7 @@ function fmtMin(min: number) {
                       justifyContent: "flex-end",
                       paddingRight: 4,
                       lineHeight: 1,
+                      transform: "translateY(-2px)",
                       fontWeight: isToday && active ? 700 : 400,
                       color: isToday && active ? "#ef4444" : "inherit",
                       opacity: active ? 1 : 0.65,
