@@ -4,6 +4,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  countQueuedRecordWrites,
+  getQueuedRecordWrites,
+  queueRecordWrite,
+  removeQueuedRecordWrite,
+  type RecordWritePayload,
+} from "@/lib/offline-record-queue";
 
 const START_OFFSET_MIN = 180; // 03:00
 const MIN_PER_SLOT = 5;
@@ -327,6 +334,10 @@ export default function DayPage() {
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine
+  );
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isNarrow, setIsNarrow] = useState(false);
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
   const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
@@ -406,6 +417,58 @@ export default function DayPage() {
     return `${AUTO_TRACK_KEY_PREFIX}:${currentUserId}`;
   }, [currentUserId]);
 
+  const refreshPendingSyncCount = useCallback(async () => {
+    if (!currentUserId) {
+      setPendingSyncCount(0);
+      return;
+    }
+    try {
+      const count = await countQueuedRecordWrites(currentUserId);
+      setPendingSyncCount(count);
+    } catch {
+      // noop
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  const flushOfflineQueue = useCallback(async () => {
+    if (!currentUserId || !accessToken || !isOnline) return;
+    try {
+      const queued = await getQueuedRecordWrites(currentUserId);
+      if (queued.length === 0) {
+        setPendingSyncCount(0);
+        return;
+      }
+
+      for (const item of queued) {
+        const res = await fetch("/api/records", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(item.payload),
+        });
+        if (!res.ok) break;
+        await removeQueuedRecordWrite(currentUserId, item.day);
+      }
+
+      await refreshPendingSyncCount();
+    } catch {
+      // noop
+    }
+  }, [currentUserId, accessToken, isOnline, refreshPendingSyncCount]);
+
   useEffect(() => {
     if (!autoTrackStorageKey) return;
     if (autoTrackHydratedKeyRef.current === autoTrackStorageKey) return;
@@ -457,6 +520,14 @@ export default function DayPage() {
     }
     localStorage.removeItem(autoTrackStorageKey);
   }, [autoTrackStorageKey, autoTrackCategoryId, autoTrackDay, autoTrackStartedAtMs, day]);
+
+  useEffect(() => {
+    refreshPendingSyncCount();
+  }, [refreshPendingSyncCount]);
+
+  useEffect(() => {
+    flushOfflineQueue();
+  }, [flushOfflineQueue]);
 
   const clearAllRecords = useCallback(async () => {
     if (!confirm("모든 날짜의 기록을 정말 삭제할까?")) return;
@@ -796,29 +867,23 @@ export default function DayPage() {
 
   // ✅ 날짜별 기록 저장
   useEffect(() => {
-    if (!accessToken || !dayReadyForSave) return;
+    if (!dayReadyForSave || !currentUserId) return;
     setSaveStatus("saving");
     const t = window.setTimeout(async () => {
-      const res = await fetch("/api/records", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+      const payload: RecordWritePayload = {
+        day,
+        blocks: actualBlocks,
+        notes: {
+          byCategory: notesByCategory,
+          byBlock: notesByBlock,
         },
-        body: JSON.stringify({
-          day,
-          blocks: actualBlocks,
-          notes: {
-            byCategory: notesByCategory,
-            byBlock: notesByBlock,
-          },
-          categories: {
-            list: categories,
-            secondsByCategory: secondsByDay[day] ?? {},
-          },
-        }),
-      });
-      if (res.ok) {
+        categories: {
+          list: categories,
+          secondsByCategory: secondsByDay[day] ?? {},
+        },
+      };
+
+      const syncLocalState = () => {
         setSaveStatus("saved");
         setRecordsByDay((prev) => ({
           ...prev,
@@ -829,13 +894,55 @@ export default function DayPage() {
             secondsByCategory: secondsByDay[day] ?? {},
           },
         }));
-      } else {
+      };
+
+      try {
+        if (!isOnline || !accessToken) {
+          await queueRecordWrite(currentUserId, payload);
+          await refreshPendingSyncCount();
+          syncLocalState();
+          return;
+        }
+
+        const res = await fetch("/api/records", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          await removeQueuedRecordWrite(currentUserId, day);
+          await refreshPendingSyncCount();
+          syncLocalState();
+        } else {
+          await queueRecordWrite(currentUserId, payload);
+          await refreshPendingSyncCount();
+          syncLocalState();
+        }
+      } catch {
+        await queueRecordWrite(currentUserId, payload);
+        await refreshPendingSyncCount();
         setSaveStatus("saved");
       }
     }, 200);
 
     return () => window.clearTimeout(t);
-  }, [accessToken, dayReadyForSave, actualBlocks, notesByCategory, notesByBlock, categories, secondsByDay, day]);
+  }, [
+    accessToken,
+    currentUserId,
+    dayReadyForSave,
+    actualBlocks,
+    notesByCategory,
+    notesByBlock,
+    categories,
+    secondsByDay,
+    day,
+    isOnline,
+    refreshPendingSyncCount,
+  ]);
   // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
   useEffect(() => {
     setNotesByCategory((prev) => {
@@ -1600,11 +1707,17 @@ function fmtMin(min: number) {
               width: 8,
               height: 8,
               borderRadius: 999,
-              background: saveStatus === "saving" ? "#f59e0b" : "#22c55e",
+              background: !isOnline ? "#f59e0b" : saveStatus === "saving" ? "#f59e0b" : "#22c55e",
               display: "inline-block",
             }}
           />
-          {saveStatus === "saving" ? "저장 중…" : "저장됨"}
+          {!isOnline
+            ? `오프라인 (${pendingSyncCount}건 대기)`
+            : saveStatus === "saving"
+              ? "저장 중…"
+              : pendingSyncCount > 0
+                ? `동기화 대기 ${pendingSyncCount}건`
+                : "저장됨"}
         </div>
         <button
           onClick={() => router.push("/setup")}
