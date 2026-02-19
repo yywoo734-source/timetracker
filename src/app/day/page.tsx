@@ -40,6 +40,7 @@ type Block = {
 
 const CATEGORIES_KEY = "timetracker_categories_v1";
 const AUTO_TRACK_KEY_PREFIX = "timetracker_auto_track_v1";
+const STUDY_INCLUDED_KEY_PREFIX = "timetracker_study_included_v1";
 
 function uuid() {
   return globalThis.crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}`;
@@ -415,6 +416,11 @@ export default function DayPage() {
   const autoTrackStorageKey = useMemo(() => {
     if (!currentUserId) return null;
     return `${AUTO_TRACK_KEY_PREFIX}:${currentUserId}`;
+  }, [currentUserId]);
+
+  const studyIncludedStorageKey = useMemo(() => {
+    if (!currentUserId) return null;
+    return `${STUDY_INCLUDED_KEY_PREFIX}:${currentUserId}`;
   }, [currentUserId]);
 
   const refreshPendingSyncCount = useCallback(async () => {
@@ -967,6 +973,7 @@ export default function DayPage() {
   const [totalTrendMode, setTotalTrendMode] = useState<"total" | "selected">("total");
   const [investRange, setInvestRange] = useState<"day" | "week" | "month">("day");
   const [studyIncludedCategoryIds, setStudyIncludedCategoryIds] = useState<Record<string, boolean>>({});
+  const studyIncludedHydratedKeyRef = useRef<string | null>(null);
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Record<string, boolean>>({});
   const [hiddenTotal, setHiddenTotal] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -1096,12 +1103,48 @@ function fmtMin(min: number) {
   }, [autoTrackCategoryId, autoTrackStartedAtMs, autoTrackNowMs]);
 
   useEffect(() => {
+    if (categories.length === 0) {
+      setStudyIncludedCategoryIds({});
+      return;
+    }
+
+    const shouldHydrate =
+      !!studyIncludedStorageKey &&
+      studyIncludedHydratedKeyRef.current !== studyIncludedStorageKey;
+
+    let storedMap: Record<string, boolean> = {};
+    if (shouldHydrate && studyIncludedStorageKey) {
+      try {
+        const raw = localStorage.getItem(studyIncludedStorageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            for (const [k, v] of Object.entries(parsed)) {
+              if (typeof v === "boolean") storedMap[k] = v;
+            }
+          }
+        }
+      } catch {
+        // noop
+      }
+    }
+
     setStudyIncludedCategoryIds((prev) => {
+      const base = shouldHydrate ? storedMap : prev;
       const next: Record<string, boolean> = {};
-      for (const c of categories) next[c.id] = prev[c.id] ?? true;
+      for (const c of categories) next[c.id] = base[c.id] ?? true;
       return next;
     });
-  }, [categories]);
+
+    if (shouldHydrate && studyIncludedStorageKey) {
+      studyIncludedHydratedKeyRef.current = studyIncludedStorageKey;
+    }
+  }, [categories, studyIncludedStorageKey]);
+
+  useEffect(() => {
+    if (!studyIncludedStorageKey) return;
+    localStorage.setItem(studyIncludedStorageKey, JSON.stringify(studyIncludedCategoryIds));
+  }, [studyIncludedStorageKey, studyIncludedCategoryIds]);
 
   const isStudyIncluded = useCallback(
     (categoryId: string) => studyIncludedCategoryIds[categoryId] !== false,
