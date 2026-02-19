@@ -2353,7 +2353,6 @@ function fmtMin(min: number) {
                       onClick={(e) => {
                         if (Date.now() < suppressClickUntilRef.current) return;
                         e.stopPropagation();
-                        if (isToday && i * 5 > Math.floor(getCurrentMin03() / 5) * 5) return;
 
                         if (isDraggingRef.current) {
                           isErasingRef.current = false;
