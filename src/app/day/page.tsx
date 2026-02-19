@@ -639,10 +639,7 @@ export default function DayPage() {
   }
 
   function clampInputMinToNow(idxMin: number) {
-    if (!isToday) return idxMin;
-    const nowMin = getCurrentMin03();
-    const maxAllowed = Math.floor(nowMin / 5) * 5;
-    return Math.min(idxMin, maxAllowed);
+    return idxMin;
   }
 
   // ✅ 1분마다 현재시간 갱신
