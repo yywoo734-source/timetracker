@@ -40,6 +40,8 @@ type WeeklyReport = {
   dailyCategoryTotals: DailyCategoryTotal[];
   memos: WeeklyMemo[];
 };
+type ThemeMode = "light" | "dark";
+const THEME_KEY = "timetracker_theme_mode_v1";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -85,6 +87,51 @@ export default function WeeklyPage() {
   const [feedbackSource, setFeedbackSource] = useState<"ai" | "fallback" | null>(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [includedCategoryOverrides, setIncludedCategoryOverrides] = useState<Record<string, boolean>>({});
+  const [themeMode] = useState<ThemeMode>(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+  const [isNarrow, setIsNarrow] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 920px)").matches;
+  });
+
+  const theme = useMemo(
+    () =>
+      themeMode === "dark"
+        ? {
+            bg: "#121212",
+            card: "#171717",
+            text: "#EAEAEA",
+            muted: "#b0b0b0",
+            border: "#2e2e2e",
+            borderSoft: "#242424",
+            controlBg: "#1f1f1f",
+            controlText: "#EAEAEA",
+            accentSoft: "#0f2b2f",
+          }
+        : {
+            bg: "#f7f8fb",
+            card: "#ffffff",
+            text: "#111827",
+            muted: "#666666",
+            border: "#e5e7eb",
+            borderSoft: "#f1f1f1",
+            controlBg: "#ffffff",
+            controlText: "#111827",
+            accentSoft: "#ecfeff",
+          },
+    [themeMode]
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 920px)");
+    const apply = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -338,12 +385,16 @@ export default function WeeklyPage() {
   }
 
   if (loading) {
-    return <div style={{ maxWidth: 960, margin: "40px auto", padding: 20 }}>로딩 중...</div>;
+    return (
+      <div style={{ maxWidth: 960, margin: "40px auto", padding: 20, color: theme.text, background: theme.bg }}>
+        로딩 중...
+      </div>
+    );
   }
 
   if (error || !report) {
     return (
-      <div style={{ maxWidth: 960, margin: "40px auto", padding: 20 }}>
+      <div style={{ maxWidth: 960, margin: "40px auto", padding: 20, color: theme.text, background: theme.bg }}>
         <div>{error ?? "데이터가 없습니다."}</div>
         <button onClick={() => router.push("/day")} style={{ marginTop: 12 }}>
           day로 돌아가기
@@ -353,31 +404,44 @@ export default function WeeklyPage() {
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: "24px auto", padding: 16, display: "grid", gap: 16 }}>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 960,
+        margin: "24px auto",
+        padding: isNarrow ? 12 : 16,
+        boxSizing: "border-box",
+        display: "grid",
+        gap: 16,
+        color: theme.text,
+        background: theme.bg,
+        overflowX: "hidden",
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>주간 리포트</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: isNarrow ? "100%" : "auto" }}>
           <input
             type="date"
             value={day}
             onChange={(e) => setDay(e.target.value)}
-            style={{ padding: "6px 8px" }}
+            style={{ padding: "6px 8px", background: theme.controlBg, color: theme.controlText, border: `1px solid ${theme.border}`, borderRadius: 8 }}
           />
-          <button onClick={() => router.push("/day")} style={{ padding: "6px 10px" }}>
+          <button onClick={() => router.push("/day")} style={{ padding: "6px 10px", background: theme.controlBg, color: theme.controlText, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
             day 페이지
           </button>
-          <button onClick={exportPdf} style={{ padding: "6px 10px" }}>
+          <button onClick={exportPdf} style={{ padding: "6px 10px", background: theme.controlBg, color: theme.controlText, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
             PDF 저장
           </button>
         </div>
       </div>
 
-      <div style={{ fontSize: 13, color: "#666" }}>
+      <div style={{ fontSize: 13, color: theme.muted }}>
         기간: {report.weekStart} ~ {report.weekEnd}
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-        <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>총 공부시간 포함 항목 선택</div>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
+        <div style={{ fontSize: 12, color: theme.muted, marginBottom: 8 }}>총 공부시간 포함 항목 선택</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {report.categories.map((c) => {
             const included = includedCategoryIds[c.categoryId] !== false;
@@ -396,9 +460,9 @@ export default function WeeklyPage() {
                   gap: 8,
                   padding: "6px 10px",
                   borderRadius: 999,
-                  border: "1px solid #e5e7eb",
-                  background: included ? "#ecfeff" : "#fff",
-                  color: "#0f172a",
+                  border: `1px solid ${theme.border}`,
+                  background: included ? theme.accentSoft : theme.controlBg,
+                  color: theme.controlText,
                   cursor: "pointer",
                   fontSize: 12,
                 }}
@@ -412,41 +476,41 @@ export default function WeeklyPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>총 공부시간</div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
+          <div style={{ fontSize: 12, color: theme.muted }}>총 공부시간</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtMin(filteredTotalMinutes)}</div>
         </div>
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>과목 비율(최대)</div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
+          <div style={{ fontSize: 12, color: theme.muted }}>과목 비율(최대)</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>
             {summaryTopCategory
               ? `${summaryTopCategory.label} ${fmtPct(summaryTopCategory.ratio)}`
               : "-"}
           </div>
           {summaryTopCategory && (
-            <div style={{ marginTop: 2, fontSize: 12, color: "#666" }}>
+            <div style={{ marginTop: 2, fontSize: 12, color: theme.muted }}>
               {fmtMin(summaryTopCategory.minutes)}
             </div>
           )}
         </div>
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>지난주 대비 증감</div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
+          <div style={{ fontSize: 12, color: theme.muted }}>지난주 대비 증감</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtSignedMin(filteredDeltaTotalMinutes)}</div>
         </div>
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>가장 흔들린 요일(최저)</div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
+          <div style={{ fontSize: 12, color: theme.muted }}>가장 흔들린 요일(최저)</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>
             {weakestDay ? `${fmtDay(weakestDay.day)} · ${fmtMin(weakestDay.minutes)}` : "-"}
           </div>
         </div>
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>일자별 총 공부시간 동향</div>
         <div style={{ display: "grid", gap: 8 }}>
           {filteredDailyTotals.map((d) => (
             <div key={d.day} style={{ display: "grid", gridTemplateColumns: "64px 1fr 80px", gap: 8, alignItems: "center" }}>
-              <div style={{ fontSize: 12, color: "#666" }}>{fmtDay(d.day)}</div>
+              <div style={{ fontSize: 12, color: theme.muted }}>{fmtDay(d.day)}</div>
               <div style={{ height: 10, borderRadius: 999, background: "#f3f4f6", overflow: "hidden" }}>
                 <div
                   style={{
@@ -462,34 +526,34 @@ export default function WeeklyPage() {
         </div>
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>과목별 동향</div>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isNarrow ? 520 : 560 }}>
             <thead>
-              <tr style={{ textAlign: "left", fontSize: 12, color: "#666" }}>
-                <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>과목</th>
-                <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>이번 주</th>
-                <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>지난 주</th>
-                <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>증감</th>
-                <th style={{ padding: "8px 6px", borderBottom: "1px solid #eee" }}>메모</th>
+              <tr style={{ textAlign: "left", fontSize: 12, color: theme.muted }}>
+                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>과목</th>
+                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>이번 주</th>
+                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>지난 주</th>
+                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>증감</th>
+                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>메모</th>
               </tr>
             </thead>
             <tbody>
               {report.categories.map((c) => (
                 <tr key={c.categoryId}>
-                  <td style={{ padding: "8px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 999, background: c.color }} />
                       {c.label}
                     </span>
                   </td>
-                  <td style={{ padding: "8px 6px", borderBottom: "1px solid #f5f5f5" }}>{fmtMin(c.minutes)}</td>
-                  <td style={{ padding: "8px 6px", borderBottom: "1px solid #f5f5f5" }}>{fmtMin(c.prevMinutes)}</td>
-                  <td style={{ padding: "8px 6px", borderBottom: "1px solid #f5f5f5", color: c.deltaMinutes >= 0 ? "#065f46" : "#991b1b" }}>
+                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.minutes)}</td>
+                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.prevMinutes)}</td>
+                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}`, color: c.deltaMinutes >= 0 ? "#16a34a" : "#ef4444" }}>
                     {fmtSignedMin(c.deltaMinutes)}
                   </td>
-                  <td style={{ padding: "8px 6px", borderBottom: "1px solid #f5f5f5" }}>{c.memoCount}개</td>
+                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{c.memoCount}개</td>
                 </tr>
               ))}
             </tbody>
@@ -497,36 +561,36 @@ export default function WeeklyPage() {
         </div>
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ fontWeight: 700 }}>AI 피드백</div>
-          <button onClick={generateFeedback} disabled={loadingFeedback} style={{ padding: "6px 10px" }}>
+          <button onClick={generateFeedback} disabled={loadingFeedback} style={{ padding: "6px 10px", background: theme.controlBg, color: theme.controlText, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
             {loadingFeedback ? "생성 중..." : "피드백 생성"}
           </button>
         </div>
         {feedback ? (
           <div style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>
             {feedback}
-            <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: theme.muted }}>
               생성 방식: {feedbackSource === "ai" ? "AI" : "기본 분석"}
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+          <div style={{ marginTop: 10, fontSize: 13, color: theme.muted }}>
             메모와 시간 기록을 종합한 주간 피드백을 생성할 수 있습니다.
           </div>
         )}
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>이번 주 메모 요약</div>
         {report.memos.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#666" }}>메모가 없습니다.</div>
+          <div style={{ fontSize: 13, color: theme.muted }}>메모가 없습니다.</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {report.memos.slice(0, 30).map((m, idx) => (
-              <div key={`${m.day}-${m.categoryId}-${idx}`} style={{ border: "1px solid #f1f1f1", borderRadius: 8, padding: 8 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>
+              <div key={`${m.day}-${m.categoryId}-${idx}`} style={{ border: `1px solid ${theme.borderSoft}`, borderRadius: 8, padding: 8 }}>
+                <div style={{ fontSize: 12, color: theme.muted }}>
                   {m.day} · {m.categoryLabel}
                 </div>
                 <div style={{ marginTop: 4, fontSize: 14 }}>{m.text}</div>
