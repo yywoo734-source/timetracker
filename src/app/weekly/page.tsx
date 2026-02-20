@@ -475,7 +475,13 @@ export default function WeeklyPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isNarrow ? "1fr" : "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 10,
+        }}
+      >
         <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, background: theme.card }}>
           <div style={{ fontSize: 12, color: theme.muted }}>총 공부시간</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtMin(filteredTotalMinutes)}</div>
@@ -509,7 +515,15 @@ export default function WeeklyPage() {
         <div style={{ fontWeight: 700, marginBottom: 10 }}>일자별 총 공부시간 동향</div>
         <div style={{ display: "grid", gap: 8 }}>
           {filteredDailyTotals.map((d) => (
-            <div key={d.day} style={{ display: "grid", gridTemplateColumns: "64px 1fr 80px", gap: 8, alignItems: "center" }}>
+            <div
+              key={d.day}
+              style={{
+                display: "grid",
+                gridTemplateColumns: isNarrow ? "54px 1fr 64px" : "64px 1fr 80px",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
               <div style={{ fontSize: 12, color: theme.muted }}>{fmtDay(d.day)}</div>
               <div style={{ height: 10, borderRadius: 999, background: "#f3f4f6", overflow: "hidden" }}>
                 <div
@@ -528,37 +542,67 @@ export default function WeeklyPage() {
 
       <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>과목별 동향</div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isNarrow ? 520 : 560 }}>
-            <thead>
-              <tr style={{ textAlign: "left", fontSize: 12, color: theme.muted }}>
-                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>과목</th>
-                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>이번 주</th>
-                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>지난 주</th>
-                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>증감</th>
-                <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>메모</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.categories.map((c) => (
-                <tr key={c.categoryId}>
-                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 999, background: c.color }} />
-                      {c.label}
-                    </span>
-                  </td>
-                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.minutes)}</td>
-                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.prevMinutes)}</td>
-                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}`, color: c.deltaMinutes >= 0 ? "#16a34a" : "#ef4444" }}>
-                    {fmtSignedMin(c.deltaMinutes)}
-                  </td>
-                  <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{c.memoCount}개</td>
+        {isNarrow ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {report.categories.map((c) => (
+              <div
+                key={c.categoryId}
+                style={{
+                  border: `1px solid ${theme.borderSoft}`,
+                  borderRadius: 10,
+                  padding: 10,
+                  display: "grid",
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 999, background: c.color }} />
+                  <span>{c.label}</span>
+                </div>
+                <div style={{ fontSize: 12, color: theme.muted, display: "grid", gap: 2 }}>
+                  <div>이번 주: {fmtMin(c.minutes)}</div>
+                  <div>지난 주: {fmtMin(c.prevMinutes)}</div>
+                  <div style={{ color: c.deltaMinutes >= 0 ? "#16a34a" : "#ef4444" }}>
+                    증감: {fmtSignedMin(c.deltaMinutes)}
+                  </div>
+                  <div>메모: {c.memoCount}개</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+              <thead>
+                <tr style={{ textAlign: "left", fontSize: 12, color: theme.muted }}>
+                  <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>과목</th>
+                  <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>이번 주</th>
+                  <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>지난 주</th>
+                  <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>증감</th>
+                  <th style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.border}` }}>메모</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {report.categories.map((c) => (
+                  <tr key={c.categoryId}>
+                    <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 999, background: c.color }} />
+                        {c.label}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.minutes)}</td>
+                    <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{fmtMin(c.prevMinutes)}</td>
+                    <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}`, color: c.deltaMinutes >= 0 ? "#16a34a" : "#ef4444" }}>
+                      {fmtSignedMin(c.deltaMinutes)}
+                    </td>
+                    <td style={{ padding: "8px 6px", borderBottom: `1px solid ${theme.borderSoft}` }}>{c.memoCount}개</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.card }}>
