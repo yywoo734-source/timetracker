@@ -41,6 +41,7 @@ type Block = {
 const CATEGORIES_KEY = "timetracker_categories_v1";
 const AUTO_TRACK_KEY_PREFIX = "timetracker_auto_track_v1";
 const STUDY_INCLUDED_KEY_PREFIX = "timetracker_study_included_v1";
+const LAST_SYNC_AT_KEY_PREFIX = "timetracker_last_sync_at_v1";
 
 function uuid() {
   return globalThis.crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}`;
@@ -291,6 +292,11 @@ type DayRecord = {
   notesByBlock: Record<string, string>;
   secondsByCategory: Record<string, number>;
 };
+type LastSelection = {
+  start: number;
+  dur: number;
+  categoryId: string;
+};
 type ThemeMode = "light" | "dark";
 
 const EMPTY_RECORD: DayRecord = { blocks: [], notesByCategory: {}, notesByBlock: {}, secondsByCategory: {} };
@@ -299,6 +305,11 @@ const THEME_KEY = "timetracker_theme_mode_v1";
 function fmtDayLabel(isoDate: string) {
   // MM/DD
   return `${isoDate.slice(5, 7)}/${isoDate.slice(8, 10)}`;
+}
+
+function fmtSyncTime(ms: number) {
+  const d = new Date(ms);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 export default function DayPage() {
@@ -339,6 +350,7 @@ export default function DayPage() {
     typeof navigator === "undefined" ? true : navigator.onLine
   );
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const [dayReadyForSave, setDayReadyForSave] = useState(false);
   const [autoTrackCategoryId, setAutoTrackCategoryId] = useState<string | null>(null);
@@ -351,6 +363,9 @@ export default function DayPage() {
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
+  const [quickFillMinutes, setQuickFillMinutes] = useState<0 | 30 | 60>(0);
+  const [repeatLastSelection, setRepeatLastSelection] = useState(false);
+  const lastSelectionRef = useRef<LastSelection | null>(null);
   const hydratedDayRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -423,6 +438,17 @@ export default function DayPage() {
     return `${STUDY_INCLUDED_KEY_PREFIX}:${currentUserId}`;
   }, [currentUserId]);
 
+  const lastSyncStorageKey = useMemo(() => {
+    if (!currentUserId) return null;
+    return `${LAST_SYNC_AT_KEY_PREFIX}:${currentUserId}`;
+  }, [currentUserId]);
+
+  const markSyncedNow = useCallback(() => {
+    const now = Date.now();
+    setLastSyncedAt(now);
+    if (lastSyncStorageKey) localStorage.setItem(lastSyncStorageKey, String(now));
+  }, [lastSyncStorageKey]);
+
   const refreshPendingSyncCount = useCallback(async () => {
     if (!currentUserId) {
       setPendingSyncCount(0);
@@ -447,6 +473,17 @@ export default function DayPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!lastSyncStorageKey) return;
+    const raw = localStorage.getItem(lastSyncStorageKey);
+    if (!raw) {
+      setLastSyncedAt(null);
+      return;
+    }
+    const parsed = Number(raw);
+    setLastSyncedAt(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
+  }, [lastSyncStorageKey]);
+
   const flushOfflineQueue = useCallback(async () => {
     if (!currentUserId || !accessToken || !isOnline) return;
     try {
@@ -467,13 +504,14 @@ export default function DayPage() {
         });
         if (!res.ok) break;
         await removeQueuedRecordWrite(currentUserId, item.day);
+        markSyncedNow();
       }
 
       await refreshPendingSyncCount();
     } catch {
       // noop
     }
-  }, [currentUserId, accessToken, isOnline, refreshPendingSyncCount]);
+  }, [currentUserId, accessToken, isOnline, refreshPendingSyncCount, markSyncedNow]);
 
   useEffect(() => {
     if (!autoTrackStorageKey) return;
@@ -568,6 +606,7 @@ export default function DayPage() {
       setAutoTrackStartedAtMs(null);
       setHistory([]);
       setFuture([]);
+      lastSelectionRef.current = null;
       setSaveStatus("saved");
       alert("모든 기록이 삭제됐어요");
     } catch {
@@ -607,6 +646,7 @@ export default function DayPage() {
       setAutoTrackStartedAtMs(null);
       setHistory([]);
       setFuture([]);
+      lastSelectionRef.current = null;
       setSaveStatus("saved");
       alert(`${day} 기록이 삭제됐어요`);
     } catch {
@@ -919,6 +959,7 @@ export default function DayPage() {
         if (res.ok) {
           await removeQueuedRecordWrite(currentUserId, day);
           await refreshPendingSyncCount();
+          markSyncedNow();
           syncLocalState();
         } else {
           await queueRecordWrite(currentUserId, payload);
@@ -945,6 +986,7 @@ export default function DayPage() {
     day,
     isOnline,
     refreshPendingSyncCount,
+    markSyncedNow,
   ]);
   // 카테고리가 바뀌어도 기존 메모는 유지하되, 값은 문자열로 정리
   useEffect(() => {
@@ -1579,6 +1621,43 @@ function fmtMin(min: number) {
       return next.filter((b) => b.dur >= 5);
     });
   }
+
+  function applySelectionBlock(start: number, dur: number, categoryId: string) {
+    const normalizedStart = clamp(Math.round(start / 5) * 5, 0, 1435);
+    const normalizedEnd = clamp(Math.round((start + dur) / 5) * 5, normalizedStart + 5, 1440);
+    const normalizedDur = Math.max(5, normalizedEnd - normalizedStart);
+
+    pushHistory(structuredClone(actualBlocksRef.current));
+    setFuture([]);
+    setActualBlocks((prev) =>
+      applyBlock(prev, {
+        start: normalizedStart,
+        dur: normalizedDur,
+        categoryId,
+      })
+    );
+    lastSelectionRef.current = { start: normalizedStart, dur: normalizedDur, categoryId };
+  }
+
+  function applyQuickFillFromSlot(slotStart: number) {
+    const selectionBase = lastSelectionRef.current;
+    const targetDur = repeatLastSelection
+      ? selectionBase?.dur ?? (quickFillMinutes || 30)
+      : quickFillMinutes || 30;
+    const targetCategoryId = repeatLastSelection
+      ? selectionBase?.categoryId ?? activeCategoryId
+      : activeCategoryId;
+
+    if (!targetCategoryId) return;
+    applySelectionBlock(slotStart, targetDur, targetCategoryId);
+  }
+
+  function repeatLastRange() {
+    const last = lastSelectionRef.current;
+    if (!last) return;
+    applySelectionBlock(last.start + last.dur, last.dur, last.categoryId);
+  }
+
   function commitSelection() {
     if (!selection) return;
 
@@ -1596,18 +1675,7 @@ function fmtMin(min: number) {
     // ✅ 그리기 모드
     if (!activeCategoryId) return;
 
-    // ✅ 1️⃣ 변경 "직전" 상태를 history에 저장
-    pushHistory(structuredClone(actualBlocks));
-    setFuture([]); // 새 작업 시작 시 redo 기록 초기화
-
-    // ✅ 2️⃣ 실제 변경
-    setActualBlocks((prev) =>
-      applyBlock(prev, {
-        start: selection.start,
-        dur: selection.dur,
-        categoryId: activeCategoryId,
-      })
-    );
+    applySelectionBlock(selection.start, selection.dur, activeCategoryId);
 
     setDragStart(null);
     setDragEnd(null);
@@ -1735,29 +1803,35 @@ function fmtMin(min: number) {
             fontSize: 12,
             color: theme.muted,
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-end",
+            flexDirection: "column",
             gap: 8,
             minWidth: 84,
             justifyContent: "flex-end",
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background: !isOnline ? "#f59e0b" : saveStatus === "saving" ? "#f59e0b" : "#22c55e",
-              display: "inline-block",
-            }}
-          />
-          {!isOnline
-            ? `오프라인 (${pendingSyncCount}건 대기)`
-            : saveStatus === "saving"
-              ? "저장 중…"
-              : pendingSyncCount > 0
-                ? `동기화 대기 ${pendingSyncCount}건`
-                : "저장됨"}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background: !isOnline ? "#f59e0b" : saveStatus === "saving" ? "#f59e0b" : "#22c55e",
+                display: "inline-block",
+              }}
+            />
+            {!isOnline
+              ? `오프라인 (${pendingSyncCount}건 대기)`
+              : saveStatus === "saving"
+                ? "저장 중…"
+                : pendingSyncCount > 0
+                  ? `동기화 대기 ${pendingSyncCount}건`
+                  : "저장됨"}
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.75 }}>
+            마지막 동기화: {lastSyncedAt ? fmtSyncTime(lastSyncedAt) : "없음"}
+          </div>
         </div>
         <button
           onClick={() => router.push("/setup")}
@@ -2014,10 +2088,72 @@ function fmtMin(min: number) {
         >
           다시 (Redo)
         </button>
+        <button
+          onClick={() => setQuickFillMinutes((prev) => (prev === 30 ? 0 : 30))}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: quickFillMinutes === 30 ? theme.controlActiveBg : theme.controlBg,
+            color: quickFillMinutes === 30 ? theme.controlActiveText : theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          30분 빠른 입력
+        </button>
+        <button
+          onClick={() => setQuickFillMinutes((prev) => (prev === 60 ? 0 : 60))}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: quickFillMinutes === 60 ? theme.controlActiveBg : theme.controlBg,
+            color: quickFillMinutes === 60 ? theme.controlActiveText : theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          60분 빠른 입력
+        </button>
+        <button
+          onClick={() => setRepeatLastSelection((v) => !v)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: repeatLastSelection ? theme.controlActiveBg : theme.controlBg,
+            color: repeatLastSelection ? theme.controlActiveText : theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          반복 입력 {repeatLastSelection ? "ON" : "OFF"}
+        </button>
+        <button
+          onClick={repeatLastRange}
+          disabled={!lastSelectionRef.current}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.controlBg,
+            color: theme.controlText,
+            cursor: !lastSelectionRef.current ? "not-allowed" : "pointer",
+            opacity: !lastSelectionRef.current ? 0.5 : 1,
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          마지막 범위 반복
+        </button>
       </div>
 
       <div style={{ marginTop: 16, fontSize: 13, color: theme.muted }}>
-        격자에서 드래그해서 5분 칸 단위로 체크해봐
+        격자 드래그는 5분 단위, 빠른 입력 버튼은 30/60분 단위로 한 번에 입력돼.
       </div>
 
       <div
@@ -2417,16 +2553,13 @@ function fmtMin(min: number) {
                           return;
                         }
 
+                        if (quickFillMinutes > 0 || repeatLastSelection) {
+                          applyQuickFillFromSlot(i * 5);
+                          return;
+                        }
+
                         if (!activeCategoryId) return;
-                        pushHistory(structuredClone(actualBlocksRef.current));
-                        setFuture([]);
-                        setActualBlocks((prev) =>
-                          applyBlock(prev, {
-                            start: i * 5,
-                            dur: 5,
-                            categoryId: activeCategoryId,
-                          })
-                        );
+                        applySelectionBlock(i * 5, 5, activeCategoryId);
                       }}
                     />
                   );

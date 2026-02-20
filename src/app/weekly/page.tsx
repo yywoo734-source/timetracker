@@ -64,6 +64,10 @@ function fmtDay(iso: string) {
   return `${iso.slice(5, 7)}.${iso.slice(8, 10)}`;
 }
 
+function fmtPct(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
 export default function WeeklyPage() {
   const router = useRouter();
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -133,6 +137,23 @@ export default function WeeklyPage() {
   const maxDaily = useMemo(() => {
     if (!report) return 1;
     return Math.max(1, ...report.dailyTotals.map((d) => d.minutes));
+  }, [report]);
+
+  const summaryTopCategory = useMemo(() => {
+    if (!report || report.totalMinutes <= 0) return null;
+    const top = report.categories[0];
+    if (!top) return null;
+    return {
+      label: top.label,
+      ratio: (top.minutes / report.totalMinutes) * 100,
+      minutes: top.minutes,
+    };
+  }, [report]);
+
+  const weakestDay = useMemo(() => {
+    if (!report || report.dailyTotals.length === 0) return null;
+    const sorted = [...report.dailyTotals].sort((a, b) => a.minutes - b.minutes);
+    return sorted[0] ?? null;
   }, [report]);
 
   async function generateFeedback() {
@@ -306,12 +327,27 @@ export default function WeeklyPage() {
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtMin(report.totalMinutes)}</div>
         </div>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>전주 대비</div>
+          <div style={{ fontSize: 12, color: "#666" }}>과목 비율(최대)</div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>
+            {summaryTopCategory
+              ? `${summaryTopCategory.label} ${fmtPct(summaryTopCategory.ratio)}`
+              : "-"}
+          </div>
+          {summaryTopCategory && (
+            <div style={{ marginTop: 2, fontSize: 12, color: "#666" }}>
+              {fmtMin(summaryTopCategory.minutes)}
+            </div>
+          )}
+        </div>
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 12, color: "#666" }}>지난주 대비 증감</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtSignedMin(report.deltaTotalMinutes)}</div>
         </div>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>작성 메모 수</div>
-          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{report.memos.length}개</div>
+          <div style={{ fontSize: 12, color: "#666" }}>가장 흔들린 요일(최저)</div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>
+            {weakestDay ? `${fmtDay(weakestDay.day)} · ${fmtMin(weakestDay.minutes)}` : "-"}
+          </div>
         </div>
       </div>
 
