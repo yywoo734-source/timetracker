@@ -15,6 +15,12 @@ type DayTotal = {
   minutes: number;
 };
 
+type DailyCategoryTotal = {
+  day: string;
+  totalMinutes: number;
+  categoryMinutes: Record<string, number>;
+};
+
 type WeeklyMemo = {
   day: string;
   categoryId: string;
@@ -31,6 +37,7 @@ export type WeeklyReport = {
   deltaTotalMinutes: number;
   categories: WeekCategoryStat[];
   dailyTotals: DayTotal[];
+  dailyCategoryTotals: DailyCategoryTotal[];
   memos: WeeklyMemo[];
 };
 
@@ -165,6 +172,7 @@ export async function buildWeeklyReport(prisma: PrismaClient, userId: string, da
   const memoByCategoryCount: Record<string, number> = {};
   const memos: WeeklyMemo[] = [];
   const dayTotalsMap = new Map<string, number>();
+  const dayCategoryTotalsMap = new Map<string, Record<string, number>>();
 
   for (const r of weekRecords) {
     const dayKey = formatIsoDay(r.day);
@@ -173,6 +181,9 @@ export async function buildWeeklyReport(prisma: PrismaClient, userId: string, da
     for (const b of toSafeBlocks(r.blocks)) {
       currentMinutesByCategory[b.categoryId] = (currentMinutesByCategory[b.categoryId] ?? 0) + b.dur;
       dayMinutes += b.dur;
+      const dayCategoryTotals = dayCategoryTotalsMap.get(dayKey) ?? {};
+      dayCategoryTotals[b.categoryId] = (dayCategoryTotals[b.categoryId] ?? 0) + b.dur;
+      dayCategoryTotalsMap.set(dayKey, dayCategoryTotals);
     }
 
     dayTotalsMap.set(dayKey, (dayTotalsMap.get(dayKey) ?? 0) + dayMinutes);
@@ -223,6 +234,12 @@ export async function buildWeeklyReport(prisma: PrismaClient, userId: string, da
     const d = addDays(weekStart, i);
     return { day: d, minutes: dayTotalsMap.get(d) ?? 0 };
   });
+  const dailyCategoryTotals: DailyCategoryTotal[] = Array.from({ length: 7 }).map((_, i) => {
+    const d = addDays(weekStart, i);
+    const categoryMinutes = dayCategoryTotalsMap.get(d) ?? {};
+    const totalMinutes = Object.values(categoryMinutes).reduce((a, b) => a + b, 0);
+    return { day: d, totalMinutes, categoryMinutes };
+  });
 
   const totalMinutes = Object.values(currentMinutesByCategory).reduce((a, b) => a + b, 0);
   const prevTotalMinutes = Object.values(prevMinutesByCategory).reduce((a, b) => a + b, 0);
@@ -236,6 +253,7 @@ export async function buildWeeklyReport(prisma: PrismaClient, userId: string, da
     deltaTotalMinutes: totalMinutes - prevTotalMinutes,
     categories,
     dailyTotals,
+    dailyCategoryTotals,
     memos,
   };
 }

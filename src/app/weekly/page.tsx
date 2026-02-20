@@ -15,6 +15,11 @@ type WeekCategory = {
 };
 
 type DayTotal = { day: string; minutes: number };
+type DailyCategoryTotal = {
+  day: string;
+  totalMinutes: number;
+  categoryMinutes: Record<string, number>;
+};
 
 type WeeklyMemo = {
   day: string;
@@ -32,6 +37,7 @@ type WeeklyReport = {
   deltaTotalMinutes: number;
   categories: WeekCategory[];
   dailyTotals: DayTotal[];
+  dailyCategoryTotals: DailyCategoryTotal[];
   memos: WeeklyMemo[];
 };
 
@@ -78,6 +84,7 @@ export default function WeeklyPage() {
   const [feedback, setFeedback] = useState<string>("");
   const [feedbackSource, setFeedbackSource] = useState<"ai" | "fallback" | null>(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [includedCategoryOverrides, setIncludedCategoryOverrides] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -134,27 +141,72 @@ export default function WeeklyPage() {
     };
   }, [accessToken, day]);
 
-  const maxDaily = useMemo(() => {
-    if (!report) return 1;
-    return Math.max(1, ...report.dailyTotals.map((d) => d.minutes));
-  }, [report]);
+  const includedCategoryIds = useMemo(() => {
+    if (!report) return {} as Record<string, boolean>;
+    const next: Record<string, boolean> = {};
+    for (const c of report.categories) {
+      const override = includedCategoryOverrides[c.categoryId];
+      next[c.categoryId] = override ?? true;
+    }
+    return next;
+  }, [report, includedCategoryOverrides]);
+
+  const filteredTotalMinutes = useMemo(() => {
+    if (!report) return 0;
+    return report.categories.reduce(
+      (acc, c) => (includedCategoryIds[c.categoryId] === false ? acc : acc + c.minutes),
+      0
+    );
+  }, [report, includedCategoryIds]);
+
+  const filteredPrevTotalMinutes = useMemo(() => {
+    if (!report) return 0;
+    return report.categories.reduce(
+      (acc, c) => (includedCategoryIds[c.categoryId] === false ? acc : acc + c.prevMinutes),
+      0
+    );
+  }, [report, includedCategoryIds]);
+
+  const filteredDeltaTotalMinutes = filteredTotalMinutes - filteredPrevTotalMinutes;
+
+  const filteredDailyTotals = useMemo(() => {
+    if (!report) return [] as DayTotal[];
+    const source =
+      report.dailyCategoryTotals && report.dailyCategoryTotals.length > 0
+        ? report.dailyCategoryTotals
+        : report.dailyTotals.map((d) => ({ day: d.day, totalMinutes: d.minutes, categoryMinutes: {} }));
+    return source.map((d) => {
+      const minutes = Object.entries(d.categoryMinutes).reduce((acc, [categoryId, value]) => {
+        if (includedCategoryIds[categoryId] === false) return acc;
+        return acc + value;
+      }, 0);
+      return { day: d.day, minutes: Object.keys(d.categoryMinutes).length === 0 ? d.totalMinutes : minutes };
+    });
+  }, [report, includedCategoryIds]);
+
+  const filteredMaxDaily = useMemo(() => {
+    if (filteredDailyTotals.length === 0) return 1;
+    return Math.max(1, ...filteredDailyTotals.map((d) => d.minutes));
+  }, [filteredDailyTotals]);
 
   const summaryTopCategory = useMemo(() => {
-    if (!report || report.totalMinutes <= 0) return null;
-    const top = report.categories[0];
+    if (!report || filteredTotalMinutes <= 0) return null;
+    const top = report.categories
+      .filter((c) => includedCategoryIds[c.categoryId] !== false)
+      .sort((a, b) => b.minutes - a.minutes)[0];
     if (!top) return null;
     return {
       label: top.label,
-      ratio: (top.minutes / report.totalMinutes) * 100,
+      ratio: (top.minutes / filteredTotalMinutes) * 100,
       minutes: top.minutes,
     };
-  }, [report]);
+  }, [report, includedCategoryIds, filteredTotalMinutes]);
 
   const weakestDay = useMemo(() => {
-    if (!report || report.dailyTotals.length === 0) return null;
-    const sorted = [...report.dailyTotals].sort((a, b) => a.minutes - b.minutes);
+    if (!report || filteredDailyTotals.length === 0) return null;
+    const sorted = [...filteredDailyTotals].sort((a, b) => a.minutes - b.minutes);
     return sorted[0] ?? null;
-  }, [report]);
+  }, [report, filteredDailyTotals]);
 
   async function generateFeedback() {
     if (!accessToken || !report) return;
@@ -321,10 +373,45 @@ export default function WeeklyPage() {
         기간: {report.weekStart} ~ {report.weekEnd}
       </div>
 
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+        <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>총 공부시간 포함 항목 선택</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {report.categories.map((c) => {
+            const included = includedCategoryIds[c.categoryId] !== false;
+            return (
+              <button
+                key={`include-${c.categoryId}`}
+                onClick={() =>
+                  setIncludedCategoryOverrides((prev) => ({
+                    ...prev,
+                    [c.categoryId]: !(prev[c.categoryId] !== false),
+                  }))
+                }
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #e5e7eb",
+                  background: included ? "#ecfeff" : "#fff",
+                  color: "#0f172a",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ width: 10, height: 10, borderRadius: 999, background: c.color }} />
+                {included ? "✓ " : ""}{c.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 12, color: "#666" }}>총 공부시간</div>
-          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtMin(report.totalMinutes)}</div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtMin(filteredTotalMinutes)}</div>
         </div>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 12, color: "#666" }}>과목 비율(최대)</div>
@@ -341,7 +428,7 @@ export default function WeeklyPage() {
         </div>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 12, color: "#666" }}>지난주 대비 증감</div>
-          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtSignedMin(report.deltaTotalMinutes)}</div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{fmtSignedMin(filteredDeltaTotalMinutes)}</div>
         </div>
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 12, color: "#666" }}>가장 흔들린 요일(최저)</div>
@@ -354,11 +441,17 @@ export default function WeeklyPage() {
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>일자별 총 공부시간 동향</div>
         <div style={{ display: "grid", gap: 8 }}>
-          {report.dailyTotals.map((d) => (
+          {filteredDailyTotals.map((d) => (
             <div key={d.day} style={{ display: "grid", gridTemplateColumns: "64px 1fr 80px", gap: 8, alignItems: "center" }}>
               <div style={{ fontSize: 12, color: "#666" }}>{fmtDay(d.day)}</div>
               <div style={{ height: 10, borderRadius: 999, background: "#f3f4f6", overflow: "hidden" }}>
-                <div style={{ width: `${(d.minutes / maxDaily) * 100}%`, height: "100%", background: "#111827" }} />
+                <div
+                  style={{
+                    width: `${(d.minutes / filteredMaxDaily) * 100}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #06b6d4, #22c55e)",
+                  }}
+                />
               </div>
               <div style={{ fontSize: 12, textAlign: "right" }}>{fmtMin(d.minutes)}</div>
             </div>
