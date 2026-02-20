@@ -178,7 +178,8 @@ export default function WeeklyPage() {
     return source.map((d) => {
       const minutes = Object.entries(d.categoryMinutes).reduce((acc, [categoryId, value]) => {
         if (includedCategoryIds[categoryId] === false) return acc;
-        return acc + value;
+        const parsed = typeof value === "number" ? value : Number(value);
+        return acc + (Number.isFinite(parsed) ? parsed : 0);
       }, 0);
       return { day: d.day, minutes: Object.keys(d.categoryMinutes).length === 0 ? d.totalMinutes : minutes };
     });
