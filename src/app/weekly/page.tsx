@@ -205,7 +205,9 @@ export default function WeeklyPage() {
 
   const weakestDay = useMemo(() => {
     if (!report || filteredDailyTotals.length === 0) return null;
-    const sorted = [...filteredDailyTotals].sort((a, b) => a.minutes - b.minutes);
+    const pastOrCurrentDays = filteredDailyTotals.filter((d) => d.day <= report.day);
+    if (pastOrCurrentDays.length === 0) return null;
+    const sorted = [...pastOrCurrentDays].sort((a, b) => a.minutes - b.minutes);
     return sorted[0] ?? null;
   }, [report, filteredDailyTotals]);
 
