@@ -342,6 +342,8 @@ export default function DayPage() {
   const [notesByCategory, setNotesByCategory] = useState<Record<string, string>>({});
   const [notesByBlock, setNotesByBlock] = useState<Record<string, string>>({});
   const [openBlockMemoId, setOpenBlockMemoId] = useState<string | null>(null);
+  const [gridMemoMode, setGridMemoMode] = useState(false);
+  const [gridMemoBlockId, setGridMemoBlockId] = useState<string | null>(null);
   const [showTodayMemoBoard, setShowTodayMemoBoard] = useState(false);
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [showAllNotes, setShowAllNotes] = useState<boolean>(false);
@@ -1110,6 +1112,18 @@ export default function DayPage() {
     const e = Math.floor((selection.start + selection.dur) / 5);
     return { s, e };
   }, [selection]);
+
+  const gridMemoBlock = useMemo(() => {
+    if (!gridMemoBlockId) return null;
+    return actualBlocks.find((b) => b.id === gridMemoBlockId) ?? null;
+  }, [gridMemoBlockId, actualBlocks]);
+
+  function findBlockIdAtMinute(min: number) {
+    const containing = actualBlocks
+      .filter((b) => min >= b.start && min < b.start + b.dur)
+      .sort((a, b) => b.start - a.start);
+    return containing[0]?.id ?? null;
+  }
 
 function fmtMin(min: number) {
   const rounded = Math.max(0, Math.round(min));
@@ -2072,6 +2086,24 @@ function fmtMin(min: number) {
           이전 (Undo)
         </button>
         <button
+          onClick={() => {
+            setGridMemoMode((v) => !v);
+            setGridMemoBlockId(null);
+          }}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: gridMemoMode ? theme.controlActiveBg : theme.controlBg,
+            color: gridMemoMode ? theme.controlActiveText : theme.controlText,
+            cursor: "pointer",
+            fontSize: 13,
+            boxShadow: theme.buttonShadow,
+          }}
+        >
+          격자 메모 모드 {gridMemoMode ? "ON" : "OFF"}
+        </button>
+        <button
           onClick={redo}
           disabled={future.length === 0}
           style={{
@@ -2154,6 +2186,7 @@ function fmtMin(min: number) {
 
       <div style={{ marginTop: 16, fontSize: 13, color: theme.muted }}>
         격자 드래그는 5분 단위, 빠른 입력 버튼은 30/60분 단위로 한 번에 입력돼.
+        {gridMemoMode ? " (메모 모드 ON: 색칠된 칸 클릭 시 메모 작성)" : ""}
       </div>
 
       <div
@@ -2549,6 +2582,14 @@ function fmtMin(min: number) {
                         }
 
                         if (hasFilled) {
+                          if (gridMemoMode) {
+                            const targetId = findBlockIdAtMinute(i * 5);
+                            if (targetId) {
+                              setGridMemoBlockId(targetId);
+                              setOpenBlockMemoId(targetId);
+                            }
+                            return;
+                          }
                           removeBlockAt(i * 5);
                           return;
                         }
@@ -2567,6 +2608,59 @@ function fmtMin(min: number) {
               </div>
             </div>
           </div>
+
+          {gridMemoBlock && (
+            <div
+              style={{
+                width: "100%",
+                maxWidth: isNarrow ? "none" : TIME_LABEL_W + GRID_LABEL_GAP + GRID_W,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 12,
+                background: theme.card,
+                padding: 12,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  격자 메모 · {labelFromIndex03Sec(gridMemoBlock.start)} ~ {labelFromIndex03Sec(gridMemoBlock.start + gridMemoBlock.dur)}
+                </div>
+                <button
+                  onClick={() => setGridMemoBlockId(null)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 8,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.controlBg,
+                    color: theme.controlText,
+                    cursor: "pointer",
+                    fontSize: 11,
+                  }}
+                >
+                  닫기
+                </button>
+              </div>
+              <input
+                value={notesByBlock[gridMemoBlock.id] ?? ""}
+                maxLength={120}
+                placeholder="이 시간대에 한 생각/회고를 적어줘"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNotesByBlock((prev) => ({ ...prev, [gridMemoBlock.id]: v }));
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 8,
+                  padding: "9px 10px",
+                  borderRadius: 10,
+                  border: `1px solid ${theme.border}`,
+                  background: theme.cardSoft,
+                  color: theme.text,
+                  fontSize: 12,
+                  outline: "none",
+                }}
+              />
+            </div>
+          )}
 
           {/* 아래 카드: 오늘 기록 리스트 */}
           <div
