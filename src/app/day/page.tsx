@@ -1118,9 +1118,10 @@ export default function DayPage() {
     return actualBlocks.find((b) => b.id === gridMemoBlockId) ?? null;
   }, [gridMemoBlockId, actualBlocks]);
 
-  function findBlockIdAtMinute(min: number) {
+  function findBlockIdInSlot(slotStartMin: number) {
+    const slotEndMin = slotStartMin + 5;
     const containing = actualBlocks
-      .filter((b) => min >= b.start && min < b.start + b.dur)
+      .filter((b) => b.start < slotEndMin && b.start + b.dur > slotStartMin)
       .sort((a, b) => b.start - a.start);
     return containing[0]?.id ?? null;
   }
@@ -2338,6 +2339,7 @@ function fmtMin(min: number) {
                 touchAction: "none",
               }}
               onMouseDown={(e) => {
+                if (gridMemoMode) return;
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                 const idx = clampInputMinToNow(
                   snapIndexFromPoint(e.clientY, e.clientX, rect.top, rect.left)
@@ -2390,6 +2392,7 @@ function fmtMin(min: number) {
               }}
               onTouchStart={(e) => {
                 e.preventDefault();
+                if (gridMemoMode) return;
                 if (e.touches.length > 1) {
                   isPinchingRef.current = true;
                   suppressClickUntilRef.current = Date.now() + 500;
@@ -2571,6 +2574,15 @@ function fmtMin(min: number) {
                           return;
                         }
 
+                        if (gridMemoMode) {
+                          const targetId = findBlockIdInSlot(i * 5);
+                          if (targetId) {
+                            setGridMemoBlockId(targetId);
+                            setOpenBlockMemoId(targetId);
+                          }
+                          return;
+                        }
+
                         if (selection) {
                           removeSelectionRange(selection.start, selection.dur);
                           setDragStart(null);
@@ -2582,14 +2594,6 @@ function fmtMin(min: number) {
                         }
 
                         if (hasFilled) {
-                          if (gridMemoMode) {
-                            const targetId = findBlockIdAtMinute(i * 5);
-                            if (targetId) {
-                              setGridMemoBlockId(targetId);
-                              setOpenBlockMemoId(targetId);
-                            }
-                            return;
-                          }
                           removeBlockAt(i * 5);
                           return;
                         }
