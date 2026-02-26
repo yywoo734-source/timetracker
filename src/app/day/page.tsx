@@ -286,6 +286,27 @@ function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+function smoothPathFromPoints(points: Array<{ x: number; y: number }>) {
+  if (points.length === 0) return "";
+  if (points.length === 1) {
+    const p = points[0];
+    return `M ${p.x} ${p.y}`;
+  }
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    const midX = (p0.x + p1.x) / 2;
+    const midY = (p0.y + p1.y) / 2;
+    d += ` Q ${p0.x} ${p0.y}, ${midX} ${midY}`;
+  }
+
+  const last = points[points.length - 1];
+  d += ` T ${last.x} ${last.y}`;
+  return d;
+}
+
 type DayRecord = {
   blocks: Block[];
   notesByCategory: Record<string, string>;
@@ -3218,7 +3239,8 @@ function fmtMin(min: number) {
               const xAt = (i: number) => padL + i * xStep;
               const y = (v: number) => padT + innerH - (v / yMax) * innerH;
 
-              const points = values.map((v, i) => `${xAt(i)},${y(v)}`).join(" ");
+              const linePoints = values.map((v, i) => ({ x: xAt(i), y: y(v) }));
+              const linePath = smoothPathFromPoints(linePoints);
 
               const tooltip =
                 totalHoverIndex == null
@@ -3280,14 +3302,7 @@ function fmtMin(min: number) {
                     );
                   })}
 
-                  <polyline
-                    points={points}
-                    fill="none"
-                    stroke={theme.text}
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                  <path d={linePath} fill="none" stroke={theme.text} strokeWidth={2} strokeLinecap="round" />
 
                   {values.map((v, i) => (
                     <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
@@ -3540,22 +3555,20 @@ function fmtMin(min: number) {
                     {categories
                       .filter((c) => !hiddenCategoryIds[c.id])
                       .map((c) => {
-                        const pts = days
-                          .map((d, i) => {
-                            const v = d.totals[c.id] ?? 0;
-                            return `${xAt(i)},${y(v)}`;
-                          })
-                          .join(" ");
+                        const pts = days.map((d, i) => {
+                          const v = d.totals[c.id] ?? 0;
+                          return { x: xAt(i), y: y(v) };
+                        });
+                        const path = smoothPathFromPoints(pts);
 
                         return (
-                          <polyline
+                          <path
                             key={c.id}
-                            points={pts}
+                            d={path}
                             fill="none"
                             stroke={c.color}
-                            strokeWidth={3}
+                            strokeWidth={2}
                             strokeLinecap="round"
-                            strokeLinejoin="round"
                           />
                         );
                       })}
