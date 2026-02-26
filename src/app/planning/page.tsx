@@ -16,6 +16,16 @@ type PlanItem = {
   intensity?: number;
   color?: string;
 };
+type EditState = {
+  day: string;
+  itemId: string;
+  title: string;
+  startTime: string;
+  durMin: number;
+  intensity: number;
+  categoryId: string;
+  done: boolean;
+};
 
 const CATEGORIES_KEY = "timetracker_categories_v1";
 const HEADER_H = 42;
@@ -64,6 +74,11 @@ function fmtClock(min: number) {
   const safe = Math.max(0, Math.min(1439, Math.floor(min)));
   return `${pad2(Math.floor(safe / 60))}:${pad2(safe % 60)}`;
 }
+function parseClockToMin(time: string) {
+  const [h, m] = time.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return Math.max(0, Math.min(1439, h * 60 + m));
+}
 function loadLocalCategories(): Category[] {
   try {
     const raw = localStorage.getItem(CATEGORIES_KEY);
@@ -87,6 +102,7 @@ export default function PlanningPage() {
   const [activeCategoryId, setActiveCategoryId] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
+  const [editState, setEditState] = useState<EditState | null>(null);
 
   const [dragPreview, setDragPreview] = useState<{ day: string; startMin: number; endMin: number } | null>(null);
   const dragStateRef = useRef<{ day: string; startMin: number } | null>(null);
@@ -196,6 +212,54 @@ export default function PlanningPage() {
   }
 
   const activeCategory = categories.find((c) => c.id === activeCategoryId) ?? null;
+
+  function openEditor(day: string, item: PlanItem) {
+    const matchedCategory =
+      categories.find((c) => c.color === item.color) ??
+      categories.find((c) => c.label === item.kind) ??
+      categories.find((c) => c.id === activeCategoryId) ??
+      categories[0];
+
+    setEditState({
+      day,
+      itemId: item.id,
+      title: item.text,
+      startTime: fmtClock(item.startMin ?? 8 * 60),
+      durMin: item.durMin ?? SNAP_MIN,
+      intensity: item.intensity ?? 80,
+      categoryId: matchedCategory?.id ?? "",
+      done: !!item.done,
+    });
+  }
+
+  async function saveEdit() {
+    if (!editState) return;
+    const category = categories.find((c) => c.id === editState.categoryId) ?? activeCategory;
+    const next = (planningByDay[editState.day] ?? []).map((x) => {
+      if (x.id !== editState.itemId) return x;
+      return {
+        ...x,
+        text: editState.title.trim() || x.text,
+        done: editState.done,
+        startMin: parseClockToMin(editState.startTime),
+        durMin: Math.max(5, Math.min(12 * 60, Math.round(editState.durMin))),
+        intensity: Math.max(0, Math.min(100, Math.round(editState.intensity))),
+        kind: category?.label ?? x.kind,
+        color: category?.color ?? x.color,
+      } satisfies PlanItem;
+    });
+    setPlanningByDay((prev) => ({ ...prev, [editState.day]: next }));
+    setEditState(null);
+    await saveDay(editState.day, next);
+  }
+
+  async function deleteEdit() {
+    if (!editState) return;
+    const next = (planningByDay[editState.day] ?? []).filter((x) => x.id !== editState.itemId);
+    setPlanningByDay((prev) => ({ ...prev, [editState.day]: next }));
+    setEditState(null);
+    await saveDay(editState.day, next);
+  }
 
   function pxToMinute(day: string, clientY: number) {
     const lane = laneRefs.current[day];
@@ -386,6 +450,7 @@ export default function PlanningPage() {
                     return (
                       <div
                         key={item.id}
+                        onPointerDown={(e) => e.stopPropagation()}
                         style={{
                           position: "absolute",
                           left: 4,
@@ -402,11 +467,9 @@ export default function PlanningPage() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const next = (planningByDay[day] ?? []).filter((x) => x.id !== item.id);
-                          setPlanningByDay((prev) => ({ ...prev, [day]: next }));
-                          void saveDay(day, next);
+                          openEditor(day, item);
                         }}
-                        title="클릭하면 삭제"
+                        title="클릭하면 설정"
                       >
                         <div style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{item.text}</div>
                         <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
@@ -436,6 +499,97 @@ export default function PlanningPage() {
           </div>
         </div>
       </div>
+      {editState && (
+        <div
+          onClick={() => setEditState(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,.36)",
+            zIndex: 120,
+            display: "grid",
+            placeItems: "center",
+            padding: 14,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(560px, 94vw)",
+              background: "#fff",
+              borderRadius: 16,
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 18px 40px rgba(15,23,42,.18)",
+              padding: 16,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ fontSize: 22 }}>이벤트</strong>
+              <button onClick={() => setEditState(null)}>닫기</button>
+            </div>
+
+            <input
+              value={editState.title}
+              onChange={(e) => setEditState((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
+              placeholder="제목"
+              style={{ padding: "10px 12px", fontSize: 16 }}
+            />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input
+                type="time"
+                value={editState.startTime}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, startTime: e.target.value } : prev))}
+              />
+              <input
+                type="number"
+                min={5}
+                max={720}
+                value={editState.durMin}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, durMin: Number(e.target.value) || 30 } : prev))}
+                placeholder="지속시간(분)"
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select
+                value={editState.categoryId}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, categoryId: e.target.value } : prev))}
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={editState.intensity}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, intensity: Number(e.target.value) || 0 } : prev))}
+                placeholder="강도(%)"
+              />
+            </div>
+
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={editState.done}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, done: e.target.checked } : prev))}
+              />
+              완료 처리
+            </label>
+
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <button onClick={() => void deleteEdit()} style={{ color: "#b91c1c" }}>삭제</button>
+              <button onClick={() => void saveEdit()}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
