@@ -748,6 +748,23 @@ export default function DayPage() {
   }, [showTodayMemoBoard]);
 
   useEffect(() => {
+    const endInteraction = () => cancelGridInteraction();
+    const onVisibility = () => {
+      if (document.hidden) cancelGridInteraction();
+    };
+    window.addEventListener("mouseup", endInteraction);
+    window.addEventListener("touchend", endInteraction, { passive: true });
+    window.addEventListener("blur", endInteraction);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("mouseup", endInteraction);
+      window.removeEventListener("touchend", endInteraction);
+      window.removeEventListener("blur", endInteraction);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!autoTrackCategoryId) return;
     setAutoTrackNowMs(Date.now());
     const id = window.setInterval(() => setAutoTrackNowMs(Date.now()), 1000);
@@ -894,6 +911,8 @@ export default function DayPage() {
   useEffect(() => {
     hydratedDayRef.current = null;
     setDayReadyForSave(false);
+    cancelGridInteraction();
+    setGridMemoBlockId(null);
   }, [day]);
 
   // ✅ 날짜별 기록 불러오기 (현재 day는 최초 1회만 반영해서 깜빡임 방지)
@@ -1112,6 +1131,15 @@ export default function DayPage() {
     const e = Math.floor((selection.start + selection.dur) / 5);
     return { s, e };
   }, [selection]);
+
+  function cancelGridInteraction() {
+    dragStartRef.current = null;
+    isDraggingRef.current = false;
+    isErasingRef.current = false;
+    isPinchingRef.current = false;
+    setDragStart(null);
+    setDragEnd(null);
+  }
 
   const gridMemoBlock = useMemo(() => {
     if (!gridMemoBlockId) return null;
@@ -1521,6 +1549,14 @@ function fmtMin(min: number) {
       localStorage.removeItem(autoTrackStorageKey);
     }
   }
+
+  useEffect(() => {
+    if (!autoTrackCategoryId || !autoTrackDay) return;
+    const currentDay = isoDayKey03();
+    if (autoTrackDay !== currentDay) {
+      stopAutoTrack(true);
+    }
+  }, [autoTrackCategoryId, autoTrackDay, autoTrackStartedAtMs, autoTrackNowMs]);
 
   function toggleCategoryVisible(id: string) {
     setHiddenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
