@@ -6,6 +6,11 @@ type PlannerItem = {
   id: string;
   text: string;
   done: boolean;
+  kind?: string;
+  startMin?: number;
+  durMin?: number;
+  intensity?: number;
+  color?: string;
 };
 
 function dayToDate(day: string) {
@@ -31,7 +36,17 @@ function sanitizeItems(value: unknown): PlannerItem[] {
       const text = String(item.text ?? "").trim();
       const done = Boolean(item.done);
       if (!id || !text) return null;
-      return { id, text: text.slice(0, 120), done };
+      const kindRaw = String(item.kind ?? "").trim();
+      const kind = kindRaw ? kindRaw.slice(0, 24) : undefined;
+      const startRaw = Number(item.startMin);
+      const durRaw = Number(item.durMin);
+      const intensityRaw = Number(item.intensity);
+      const colorRaw = String(item.color ?? "").trim();
+      const startMin = Number.isFinite(startRaw) ? Math.max(0, Math.min(1439, Math.round(startRaw))) : undefined;
+      const durMin = Number.isFinite(durRaw) ? Math.max(5, Math.min(12 * 60, Math.round(durRaw))) : undefined;
+      const intensity = Number.isFinite(intensityRaw) ? Math.max(0, Math.min(100, Math.round(intensityRaw))) : undefined;
+      const color = colorRaw ? colorRaw.slice(0, 24) : undefined;
+      return { id, text: text.slice(0, 120), done, kind, startMin, durMin, intensity, color };
     })
     .filter((x): x is PlannerItem => x !== null);
 }
