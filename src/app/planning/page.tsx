@@ -15,9 +15,10 @@ type PlanItem = {
   durMin?: number;
   intensity?: number;
   color?: string;
-  repeatType?: "DAILY" | "WEEKLY";
+  repeatType?: "DAILY" | "WEEKLY" | "CUSTOM";
   repeatUntil?: string;
   repeatGroupId?: string;
+  repeatWeekdays?: number[];
 };
 type EditState = {
   day: string;
@@ -28,8 +29,9 @@ type EditState = {
   intensity: number;
   categoryId: string;
   done: boolean;
-  repeatType: "NONE" | "DAILY" | "WEEKLY";
+  repeatType: "NONE" | "DAILY" | "WEEKLY" | "CUSTOM";
   repeatUntil: string;
+  repeatWeekdays: number[];
 };
 
 const CATEGORIES_KEY = "timetracker_categories_v1";
@@ -38,6 +40,7 @@ const HOUR_H = 58;
 const SNAP_MIN = 15;
 const GRID_LINE = "rgba(148,163,184,.22)";
 const HOUR_LINE = "rgba(148,163,184,.14)";
+const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -79,6 +82,30 @@ function uuid() {
 }
 function isIsoDay(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+function dayOfWeek(isoDay: string) {
+  return parseIso(isoDay).getDay();
+}
+function makeMonthCells(anchor: string) {
+  const first = parseIso(monthStart(anchor));
+  const last = parseIso(monthEnd(anchor));
+  const leading = first.getDay();
+  const cells: Array<{ day: string | null }> = [];
+  for (let i = 0; i < leading; i++) cells.push({ day: null });
+  for (let d = 1; d <= last.getDate(); d++) {
+    cells.push({ day: formatIso(new Date(first.getFullYear(), first.getMonth(), d)) });
+  }
+  while (cells.length % 7 !== 0) cells.push({ day: null });
+  return cells;
+}
+function rgba(hex: string, alpha: number) {
+  const clean = hex.replace("#", "");
+  const normalized = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+  const n = parseInt(normalized, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 function fmtClock(min: number) {
   const safe = Math.max(0, Math.min(1439, Math.floor(min)));
@@ -249,8 +276,9 @@ export default function PlanningPage() {
       intensity: item.intensity ?? 80,
       categoryId: matchedCategory?.id ?? "",
       done: !!item.done,
-      repeatType: item.repeatType ?? "NONE",
+      repeatType: (item.repeatType as "DAILY" | "WEEKLY" | "CUSTOM" | undefined) ?? "NONE",
       repeatUntil: item.repeatUntil ?? day,
+      repeatWeekdays: item.repeatWeekdays ?? [dayOfWeek(day)],
     });
   }
 
@@ -259,6 +287,12 @@ export default function PlanningPage() {
     const category = categories.find((c) => c.id === editState.categoryId) ?? activeCategory;
     const repeatGroupId = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId)?.repeatGroupId ?? uuid();
     const baseItem = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId);
+    const normalizedWeekdays =
+      editState.repeatType === "CUSTOM"
+        ? Array.from(new Set(editState.repeatWeekdays)).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+        : [];
+    const safeWeekdays = normalizedWeekdays.length > 0 ? normalizedWeekdays : [dayOfWeek(editState.day)];
+
     const updatedBase: PlanItem = {
       ...(baseItem ?? { id: editState.itemId, text: editState.title, done: false }),
       text: editState.title.trim() || baseItem?.text || "",
@@ -274,6 +308,10 @@ export default function PlanningPage() {
           ? undefined
           : editState.repeatUntil,
       repeatGroupId: editState.repeatType === "NONE" ? undefined : repeatGroupId,
+      repeatWeekdays:
+        editState.repeatType === "CUSTOM"
+          ? safeWeekdays
+          : undefined,
     };
 
     const nextMap: Record<string, PlanItem[]> = { ...planningByDay };
@@ -283,34 +321,38 @@ export default function PlanningPage() {
     });
     nextMap[editState.day] = nextCurrent;
 
+    // 기존 같은 반복 그룹은 현재 메모리 범위에서 일단 정리
+    for (const [d, items] of Object.entries(nextMap)) {
+      nextMap[d] = items.filter((x) => x.id === editState.itemId || x.repeatGroupId !== repeatGroupId);
+    }
+
+    const saveTargets = new Set<string>([editState.day]);
     if (updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
-      const step = updatedBase.repeatType === "DAILY" ? 1 : 7;
-      let cursor = addDays(editState.day, step);
+      let cursor = addDays(editState.day, 1);
       while (cursor <= updatedBase.repeatUntil) {
-        const dayItems = nextMap[cursor] ?? [];
-        const filtered = dayItems.filter((x) => x.repeatGroupId !== repeatGroupId);
-        filtered.push({
-          ...updatedBase,
-          id: uuid(),
-          done: false,
-          repeatGroupId,
-        });
-        nextMap[cursor] = filtered;
-        cursor = addDays(cursor, step);
+        const shouldAdd =
+          updatedBase.repeatType === "DAILY"
+            ? true
+          : updatedBase.repeatType === "WEEKLY"
+              ? dayOfWeek(cursor) === dayOfWeek(editState.day)
+              : (updatedBase.repeatWeekdays ?? safeWeekdays).includes(dayOfWeek(cursor));
+        if (shouldAdd) {
+          const dayItems = nextMap[cursor] ?? [];
+          dayItems.push({
+            ...updatedBase,
+            id: uuid(),
+            done: false,
+            repeatGroupId,
+          });
+          nextMap[cursor] = dayItems;
+          saveTargets.add(cursor);
+        }
+        cursor = addDays(cursor, 1);
       }
     }
 
     setPlanningByDay(nextMap);
     setEditState(null);
-    const saveTargets = new Set<string>([editState.day]);
-    if (updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
-      const step = updatedBase.repeatType === "DAILY" ? 1 : 7;
-      let cursor = addDays(editState.day, step);
-      while (cursor <= updatedBase.repeatUntil) {
-        saveTargets.add(cursor);
-        cursor = addDays(cursor, step);
-      }
-    }
     for (const day of saveTargets) {
       await saveDay(day, nextMap[day] ?? []);
     }
@@ -387,6 +429,8 @@ export default function PlanningPage() {
     return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
   }, [anchorDay]);
 
+  const monthCells = useMemo(() => makeMonthCells(anchorDay), [anchorDay]);
+
   return (
     <div style={{ minHeight: "100dvh", background: "#f6f7fb", color: "#1f2937", padding: 16 }}>
       <div style={{ maxWidth: 1560, margin: "0 auto", display: "grid", gap: 12 }}>
@@ -432,135 +476,201 @@ export default function PlanningPage() {
           />
         </div>
 
-        <div style={{ border: `1px solid ${GRID_LINE}`, borderRadius: 16, background: "#fff", overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))`, height: HEADER_H }}>
-            <div style={{ borderRight: `1px solid ${GRID_LINE}` }} />
-            {visibleDays.map((day) => {
-              const d = parseIso(day);
-              const selected = day === effectiveSelectedDay;
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelectedDay(day)}
-                  style={{
-                    border: "none",
-                    borderLeft: `1px solid ${GRID_LINE}`,
-                    background: selected ? "#eef2ff" : "#fff",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    padding: "8px 10px",
-                    fontWeight: selected ? 800 : 600,
-                  }}
-                >
-                  {["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} {d.getDate()}
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))` }}>
-            <div style={{ borderTop: `1px solid ${GRID_LINE}`, background: "#fafbff" }}>
-              {Array.from({ length: 24 }).map((_, h) => (
-                <div key={h} style={{ height: HOUR_H, borderBottom: `1px solid ${HOUR_LINE}`, padding: "2px 8px", fontSize: 12, color: "#6b7280" }}>
-                  {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
-                </div>
-              ))}
+        {viewMode === "week" ? (
+          <div style={{ border: `1px solid ${GRID_LINE}`, borderRadius: 16, background: "#fff", overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))`, height: HEADER_H }}>
+              <div style={{ borderRight: `1px solid ${GRID_LINE}` }} />
+              {visibleDays.map((day) => {
+                const d = parseIso(day);
+                const selected = day === effectiveSelectedDay;
+                return (
+                  <button
+                    key={day}
+                    onClick={() => setSelectedDay(day)}
+                    style={{
+                      border: "none",
+                      borderLeft: `1px solid ${GRID_LINE}`,
+                      background: selected ? "#eef2ff" : "#fff",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      padding: "8px 10px",
+                      fontWeight: selected ? 800 : 600,
+                    }}
+                  >
+                    {WEEKDAY_KO[d.getDay()]} {d.getDate()}
+                  </button>
+                );
+              })}
             </div>
 
-            {visibleDays.map((day) => {
-              const dayItems = (planningByDay[day] ?? []).filter((x) => typeof x.startMin === "number" && typeof x.durMin === "number");
-              return (
-                <div
-                  key={day}
-                  ref={(el) => {
-                    laneRefs.current[day] = el;
-                  }}
-                  onPointerDown={(e) => onPointerDown(day, e)}
-                  onPointerMove={(e) => onPointerMove(day, e)}
-                  onPointerUp={() => onPointerUp(day)}
-                  onPointerCancel={() => {
-                    dragStateRef.current = null;
-                    setDragPreview(null);
-                  }}
-                  style={{
-                    position: "relative",
-                    borderTop: `1px solid ${GRID_LINE}`,
-                    borderLeft: `1px solid ${GRID_LINE}`,
-                    height: HOUR_H * 24,
-                    background: "#fff",
-                    touchAction: "none",
-                  }}
-                >
-                  {Array.from({ length: 24 }).map((_, h) => (
-                    <div
-                      key={h}
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        top: h * HOUR_H,
-                        borderTop: `1px solid ${HOUR_LINE}`,
-                      }}
-                    />
-                  ))}
+            <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))` }}>
+              <div style={{ borderTop: `1px solid ${GRID_LINE}`, background: "#fafbff" }}>
+                {Array.from({ length: 24 }).map((_, h) => (
+                  <div key={h} style={{ height: HOUR_H, borderBottom: `1px solid ${HOUR_LINE}`, padding: "2px 8px", fontSize: 12, color: "#6b7280" }}>
+                    {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
+                  </div>
+                ))}
+              </div>
 
-                  {dayItems.map((item) => {
-                    const start = item.startMin ?? 0;
-                    const dur = item.durMin ?? SNAP_MIN;
-                    const top = (start / 1440) * (HOUR_H * 24);
-                    const height = Math.max(22, (dur / 1440) * (HOUR_H * 24));
-                    const color = item.color || (activeCategory?.color ?? "#60a5fa");
-                    return (
+              {visibleDays.map((day) => {
+                const dayItems = (planningByDay[day] ?? []).filter((x) => typeof x.startMin === "number" && typeof x.durMin === "number");
+                return (
+                  <div
+                    key={day}
+                    ref={(el) => {
+                      laneRefs.current[day] = el;
+                    }}
+                    onPointerDown={(e) => onPointerDown(day, e)}
+                    onPointerMove={(e) => onPointerMove(day, e)}
+                    onPointerUp={() => onPointerUp(day)}
+                    onPointerCancel={() => {
+                      dragStateRef.current = null;
+                      setDragPreview(null);
+                    }}
+                    style={{
+                      position: "relative",
+                      borderTop: `1px solid ${GRID_LINE}`,
+                      borderLeft: `1px solid ${GRID_LINE}`,
+                      height: HOUR_H * 24,
+                      background: "#fff",
+                      touchAction: "none",
+                    }}
+                  >
+                    {Array.from({ length: 24 }).map((_, h) => (
                       <div
-                        key={item.id}
-                        onPointerDown={(e) => e.stopPropagation()}
+                        key={h}
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: h * HOUR_H,
+                          borderTop: `1px solid ${HOUR_LINE}`,
+                        }}
+                      />
+                    ))}
+
+                    {dayItems.map((item) => {
+                      const start = item.startMin ?? 0;
+                      const dur = item.durMin ?? SNAP_MIN;
+                      const top = (start / 1440) * (HOUR_H * 24);
+                      const height = Math.max(22, (dur / 1440) * (HOUR_H * 24));
+                      const color = item.color || (activeCategory?.color ?? "#60a5fa");
+                      return (
+                        <div
+                          key={item.id}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            left: 4,
+                            right: 4,
+                            top,
+                            height,
+                            borderRadius: 12,
+                            border: `1px solid ${color}66`,
+                            background: `${color}2a`,
+                            padding: "6px 8px",
+                            boxSizing: "border-box",
+                            overflow: "hidden",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditor(day, item);
+                          }}
+                          title="클릭하면 설정"
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{item.text}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                            {fmtClock(start)} - {fmtClock(start + dur)}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {dragPreview && dragPreview.day === day && activeCategory && (
+                      <div
                         style={{
                           position: "absolute",
                           left: 4,
                           right: 4,
-                          top,
-                          height,
-                          borderRadius: 12,
-                          border: `1px solid ${color}66`,
-                          background: `${color}2a`,
-                          padding: "6px 8px",
-                          boxSizing: "border-box",
-                          overflow: "hidden",
-                          cursor: "pointer",
+                          top: (dragPreview.startMin / 1440) * (HOUR_H * 24),
+                          height: Math.max(22, ((dragPreview.endMin - dragPreview.startMin) / 1440) * (HOUR_H * 24)),
+                          borderRadius: 10,
+                          border: `2px dashed ${activeCategory.color}`,
+                          background: `${activeCategory.color}20`,
                         }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditor(day, item);
-                        }}
-                        title="클릭하면 설정"
-                      >
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{item.text}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                          {fmtClock(start)} - {fmtClock(start + dur)}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {dragPreview && dragPreview.day === day && activeCategory && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 4,
-                        right: 4,
-                        top: (dragPreview.startMin / 1440) * (HOUR_H * 24),
-                        height: Math.max(22, ((dragPreview.endMin - dragPreview.startMin) / 1440) * (HOUR_H * 24)),
-                        borderRadius: 10,
-                        border: `2px dashed ${activeCategory.color}`,
-                        background: `${activeCategory.color}20`,
-                      }}
-                    />
-                  )}
-                </div>
-              );
-            })}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ border: `1px solid ${GRID_LINE}`, borderRadius: 16, background: "#fff", overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderBottom: `1px solid ${GRID_LINE}` }}>
+              {WEEKDAY_KO.map((w) => (
+                <div key={w} style={{ padding: "12px", fontWeight: 800, color: "#64748b", borderLeft: `1px solid ${GRID_LINE}`, background: "#f8fafc" }}>
+                  {w}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}>
+              {monthCells.map((cell, idx) => {
+                const day = cell.day;
+                const items = day ? (planningByDay[day] ?? []) : [];
+                const selected = day === effectiveSelectedDay;
+                return (
+                  <div
+                    key={`${day ?? "empty"}-${idx}`}
+                    onClick={() => day && setSelectedDay(day)}
+                    style={{
+                      minHeight: 164,
+                      borderLeft: `1px solid ${GRID_LINE}`,
+                      borderTop: `1px solid ${GRID_LINE}`,
+                      padding: 10,
+                      background: selected ? "#eff6ff" : "#fff",
+                      cursor: day ? "pointer" : "default",
+                      opacity: day ? 1 : 0.45,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 8 }}>
+                      {day ? parseIso(day).getDate() : ""}
+                    </div>
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {items.slice(0, 3).map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (day) openEditor(day, item);
+                          }}
+                          style={{
+                            borderRadius: 8,
+                            border: `1px solid ${rgba(item.color ?? "#93c5fd", 0.44)}`,
+                            background: rgba(item.color ?? "#93c5fd", 0.18),
+                            padding: "6px 7px",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#334155",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {item.text}
+                        </div>
+                      ))}
+                      {items.length > 3 && (
+                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>+{items.length - 3} more</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       {editState && (
         <div
@@ -579,25 +689,31 @@ export default function PlanningPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "min(560px, 94vw)",
-              background: "#fff",
-              borderRadius: 16,
-              border: "1px solid #e5e7eb",
-              boxShadow: "0 18px 40px rgba(15,23,42,.18)",
-              padding: 16,
+              background: "linear-gradient(180deg,#ffffff,#f8fafc)",
+              borderRadius: 20,
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 24px 60px rgba(15,23,42,.22)",
+              padding: 18,
               display: "grid",
-              gap: 10,
+              gap: 12,
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ fontSize: 22 }}>이벤트</strong>
-              <button onClick={() => setEditState(null)} style={premiumBtn}>닫기</button>
+              <strong style={{ fontSize: 22, letterSpacing: "-.02em" }}>이벤트 설정</strong>
+              <button onClick={() => setEditState(null)} style={{ ...premiumBtn, borderRadius: 999 }}>닫기</button>
             </div>
 
             <input
               value={editState.title}
               onChange={(e) => setEditState((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
               placeholder="제목"
-              style={{ padding: "10px 12px", fontSize: 16 }}
+              style={{
+                padding: "12px 14px",
+                fontSize: 16,
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+              }}
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -605,6 +721,7 @@ export default function PlanningPage() {
                 type="time"
                 value={editState.startTime}
                 onChange={(e) => setEditState((prev) => (prev ? { ...prev, startTime: e.target.value } : prev))}
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               />
               <input
                 type="number"
@@ -613,6 +730,7 @@ export default function PlanningPage() {
                 value={editState.durMin}
                 onChange={(e) => setEditState((prev) => (prev ? { ...prev, durMin: Number(e.target.value) || 30 } : prev))}
                 placeholder="지속시간(분)"
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               />
             </div>
 
@@ -620,6 +738,7 @@ export default function PlanningPage() {
               <select
                 value={editState.categoryId}
                 onChange={(e) => setEditState((prev) => (prev ? { ...prev, categoryId: e.target.value } : prev))}
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               >
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -634,6 +753,7 @@ export default function PlanningPage() {
                 value={editState.intensity}
                 onChange={(e) => setEditState((prev) => (prev ? { ...prev, intensity: Number(e.target.value) || 0 } : prev))}
                 placeholder="강도(%)"
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               />
             </div>
 
@@ -654,28 +774,85 @@ export default function PlanningPage() {
                     prev
                       ? {
                           ...prev,
-                          repeatType: e.target.value as "NONE" | "DAILY" | "WEEKLY",
+                          repeatType: e.target.value as "NONE" | "DAILY" | "WEEKLY" | "CUSTOM",
                           repeatUntil: prev.repeatUntil || prev.day,
+                          repeatWeekdays:
+                            e.target.value === "CUSTOM"
+                              ? prev.repeatWeekdays.length > 0
+                                ? prev.repeatWeekdays
+                                : [dayOfWeek(prev.day)]
+                              : prev.repeatWeekdays,
                         }
                       : prev
                   )
                 }
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               >
                 <option value="NONE">반복 안 함</option>
                 <option value="DAILY">매일 반복</option>
                 <option value="WEEKLY">매주 반복</option>
+                <option value="CUSTOM">사용자 지정(요일)</option>
               </select>
               <input
                 type="date"
                 value={editState.repeatUntil}
                 disabled={editState.repeatType === "NONE"}
                 onChange={(e) => setEditState((prev) => (prev ? { ...prev, repeatUntil: e.target.value } : prev))}
+                style={{ borderRadius: 12, border: "1px solid #cbd5e1", padding: "10px 12px" }}
               />
             </div>
 
+            {editState.repeatType === "CUSTOM" && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>반복 요일 선택</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {WEEKDAY_KO.map((label, idx) => {
+                    const active = editState.repeatWeekdays.includes(idx);
+                    return (
+                      <button
+                        key={label}
+                        onClick={() =>
+                          setEditState((prev) => {
+                            if (!prev) return prev;
+                            const exists = prev.repeatWeekdays.includes(idx);
+                            const next = exists
+                              ? prev.repeatWeekdays.filter((d) => d !== idx)
+                              : [...prev.repeatWeekdays, idx];
+                            return { ...prev, repeatWeekdays: next };
+                          })
+                        }
+                        style={{
+                          borderRadius: 999,
+                          border: active ? "1px solid #3b82f6" : "1px solid #cbd5e1",
+                          background: active ? "#dbeafe" : "#fff",
+                          color: active ? "#1d4ed8" : "#334155",
+                          fontWeight: 800,
+                          minWidth: 36,
+                          height: 32,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  저장 시 종료일까지 선택한 요일에 자동 배치됩니다.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <button onClick={() => void deleteEdit()} style={{ ...premiumBtn, color: "#b91c1c", borderColor: "#fecaca" }}>삭제</button>
-              <button onClick={() => void saveEdit()} style={premiumBtn}>저장</button>
+              <button
+                onClick={() => void deleteEdit()}
+                style={{ ...premiumBtn, color: "#b91c1c", borderColor: "#fecaca", background: "linear-gradient(180deg,#fff,#fff1f2)" }}
+              >
+                삭제
+              </button>
+              <button onClick={() => void saveEdit()} style={{ ...premiumBtn, background: "linear-gradient(180deg,#eff6ff,#dbeafe)" }}>
+                저장
+              </button>
             </div>
           </div>
         </div>

@@ -14,6 +14,7 @@ type PlannerItem = {
   repeatType?: string;
   repeatUntil?: string;
   repeatGroupId?: string;
+  repeatWeekdays?: number[];
 };
 
 function dayToDate(day: string) {
@@ -61,13 +62,22 @@ function sanitizeItems(value: unknown): PlannerItem[] {
     if (colorRaw) next.color = colorRaw.slice(0, 24);
 
     const repeatTypeRaw = String(item.repeatType ?? "").trim().toUpperCase();
-    if (repeatTypeRaw === "DAILY" || repeatTypeRaw === "WEEKLY") next.repeatType = repeatTypeRaw;
+    if (repeatTypeRaw === "DAILY" || repeatTypeRaw === "WEEKLY" || repeatTypeRaw === "CUSTOM") {
+      next.repeatType = repeatTypeRaw;
+    }
 
     const repeatUntilRaw = String(item.repeatUntil ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(repeatUntilRaw)) next.repeatUntil = repeatUntilRaw;
 
     const repeatGroupIdRaw = String(item.repeatGroupId ?? "").trim();
     if (repeatGroupIdRaw) next.repeatGroupId = repeatGroupIdRaw.slice(0, 80);
+
+    if (Array.isArray(item.repeatWeekdays)) {
+      const weekdays = item.repeatWeekdays
+        .map((x) => Number(x))
+        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+      if (weekdays.length > 0) next.repeatWeekdays = Array.from(new Set(weekdays));
+    }
 
     out.push(next);
   }
