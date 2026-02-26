@@ -1798,12 +1798,13 @@ function fmtMin(min: number) {
           width: 56,
           height: 46,
           borderRadius: "0 14px 14px 0",
-          border: `1px solid ${theme.borderSubtle}`,
+          border: "1px solid rgba(250, 204, 21, 0.45)",
           borderLeft: "none",
-          background: themeMode === "dark" ? "linear-gradient(180deg,#1f1f1f,#171717)" : "linear-gradient(180deg,#ffffff,#f8fafc)",
-          color: theme.controlText,
+          background:
+            "linear-gradient(180deg, rgba(253, 224, 71, 0.96), rgba(251, 191, 36, 0.92))",
+          color: "#3f2d00",
           cursor: "pointer",
-          boxShadow: themeMode === "dark" ? "0 8px 20px rgba(0,0,0,.35)" : "0 8px 20px rgba(15,23,42,.12)",
+          boxShadow: "0 10px 22px rgba(234, 179, 8, 0.28)",
           fontSize: 18,
           lineHeight: 1,
           transition: "transform .18s ease",
@@ -1837,9 +1838,9 @@ function fmtMin(min: number) {
             height: "100%",
             background:
               themeMode === "dark"
-                ? "linear-gradient(180deg,rgba(26,26,26,.98),rgba(18,18,18,.98))"
-                : "linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.98))",
-            borderRight: `1px solid ${theme.border}`,
+                ? "linear-gradient(180deg,rgba(36,33,48,.96),rgba(24,23,36,.96))"
+                : "linear-gradient(180deg,rgba(255,251,235,.98),rgba(236,254,255,.98))",
+            borderRight: "1px solid rgba(148, 163, 184, 0.3)",
             borderRadius: "0 20px 20px 0",
             boxShadow:
               themeMode === "dark"
@@ -1854,13 +1855,23 @@ function fmtMin(min: number) {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-            <strong style={{ letterSpacing: ".01em" }}>Navigation</strong>
+            <strong
+              style={{
+                letterSpacing: ".02em",
+                fontSize: 15,
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: themeMode === "dark" ? "rgba(147,197,253,.18)" : "rgba(191,219,254,.55)",
+              }}
+            >
+              Navigation
+            </strong>
             <button
               onClick={() => setLeftMenuOpen(false)}
               style={{
                 border: `1px solid ${theme.border}`,
-                background: theme.controlBg,
-                color: theme.controlText,
+                background: themeMode === "dark" ? "rgba(30,41,59,.9)" : "rgba(255,255,255,.9)",
+                color: themeMode === "dark" ? "#e2e8f0" : "#334155",
                 borderRadius: 8,
                 padding: "4px 8px",
                 cursor: "pointer",
@@ -1885,11 +1896,15 @@ function fmtMin(min: number) {
                 textAlign: "left",
                 padding: "10px 12px",
                 borderRadius: 10,
-                border: `1px solid ${theme.border}`,
-                background: theme.controlBg,
-                color: theme.controlText,
+                border: "1px solid rgba(148, 163, 184, 0.3)",
+                background:
+                  themeMode === "dark"
+                    ? "linear-gradient(180deg,rgba(30,41,59,.75),rgba(30,41,59,.45))"
+                    : "linear-gradient(180deg,#ffffff,#f8fafc)",
+                color: themeMode === "dark" ? "#e2e8f0" : "#334155",
                 cursor: "pointer",
                 fontWeight: 600,
+                boxShadow: themeMode === "dark" ? "0 8px 20px rgba(0,0,0,.22)" : "0 6px 16px rgba(148,163,184,.22)",
               }}
             >
               {item.label}
@@ -1914,11 +1929,15 @@ function fmtMin(min: number) {
                     textAlign: "left",
                     padding: "10px 12px",
                     borderRadius: 10,
-                    border: `1px solid ${theme.border}`,
-                    background: theme.controlBg,
-                    color: theme.controlText,
+                    border: "1px solid rgba(148, 163, 184, 0.3)",
+                    background:
+                      themeMode === "dark"
+                        ? "linear-gradient(180deg,rgba(59,39,74,.74),rgba(59,39,74,.45))"
+                        : "linear-gradient(180deg,#fdf4ff,#f5f3ff)",
+                    color: themeMode === "dark" ? "#f5d0fe" : "#5b21b6",
                     cursor: "pointer",
                     fontWeight: 600,
+                    boxShadow: themeMode === "dark" ? "0 8px 20px rgba(0,0,0,.22)" : "0 6px 16px rgba(167,139,250,.2)",
                   }}
                 >
                   {item.label}
