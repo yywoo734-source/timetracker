@@ -36,6 +36,8 @@ const CATEGORIES_KEY = "timetracker_categories_v1";
 const HEADER_H = 42;
 const HOUR_H = 58;
 const SNAP_MIN = 15;
+const GRID_LINE = "rgba(148,163,184,.22)";
+const HOUR_LINE = "rgba(148,163,184,.14)";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -430,9 +432,9 @@ export default function PlanningPage() {
           />
         </div>
 
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "#fff", overflow: "hidden" }}>
+        <div style={{ border: `1px solid ${GRID_LINE}`, borderRadius: 16, background: "#fff", overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))`, height: HEADER_H }}>
-            <div style={{ borderRight: "1px solid #eceff4" }} />
+            <div style={{ borderRight: `1px solid ${GRID_LINE}` }} />
             {visibleDays.map((day) => {
               const d = parseIso(day);
               const selected = day === effectiveSelectedDay;
@@ -442,7 +444,7 @@ export default function PlanningPage() {
                   onClick={() => setSelectedDay(day)}
                   style={{
                     border: "none",
-                    borderLeft: "1px solid #eceff4",
+                    borderLeft: `1px solid ${GRID_LINE}`,
                     background: selected ? "#eef2ff" : "#fff",
                     cursor: "pointer",
                     textAlign: "left",
@@ -457,9 +459,9 @@ export default function PlanningPage() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(140px, 1fr))` }}>
-            <div style={{ borderTop: "1px solid #eceff4", background: "#fafbff" }}>
+            <div style={{ borderTop: `1px solid ${GRID_LINE}`, background: "#fafbff" }}>
               {Array.from({ length: 24 }).map((_, h) => (
-                <div key={h} style={{ height: HOUR_H, borderBottom: "1px solid #f1f5f9", padding: "2px 8px", fontSize: 12, color: "#6b7280" }}>
+                <div key={h} style={{ height: HOUR_H, borderBottom: `1px solid ${HOUR_LINE}`, padding: "2px 8px", fontSize: 12, color: "#6b7280" }}>
                   {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
                 </div>
               ))}
@@ -482,8 +484,8 @@ export default function PlanningPage() {
                   }}
                   style={{
                     position: "relative",
-                    borderTop: "1px solid #eceff4",
-                    borderLeft: "1px solid #eceff4",
+                    borderTop: `1px solid ${GRID_LINE}`,
+                    borderLeft: `1px solid ${GRID_LINE}`,
                     height: HOUR_H * 24,
                     background: "#fff",
                     touchAction: "none",
@@ -497,7 +499,7 @@ export default function PlanningPage() {
                         left: 0,
                         right: 0,
                         top: h * HOUR_H,
-                        borderTop: "1px solid #f1f5f9",
+                        borderTop: `1px solid ${HOUR_LINE}`,
                       }}
                     />
                   ))}
@@ -518,8 +520,8 @@ export default function PlanningPage() {
                           right: 4,
                           top,
                           height,
-                          borderRadius: 10,
-                          borderLeft: `4px solid ${color}`,
+                          borderRadius: 12,
+                          border: `1px solid ${color}66`,
                           background: `${color}2a`,
                           padding: "6px 8px",
                           boxSizing: "border-box",
