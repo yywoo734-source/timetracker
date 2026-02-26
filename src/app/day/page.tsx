@@ -286,7 +286,7 @@ function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
-function smoothPathFromPoints(points: Array<{ x: number; y: number }>, tension = 0.22) {
+function smoothPathFromPoints(points: Array<{ x: number; y: number }>, tension = 1) {
   if (points.length === 0) return "";
   if (points.length === 1) {
     const p = points[0];
