@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "PainTracker",
-    short_name: "PainTracker",
+    name: "TimeTracker",
+    short_name: "TimeTracker",
     description: "고통 기록과 자기성찰로 성장하는 앱",
     start_url: "/new-app",
     display: "standalone",
