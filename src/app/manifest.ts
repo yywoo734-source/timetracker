@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "TimeTracker",
-    short_name: "TimeTracker",
-    description: "학생 공부 시간 기록 앱",
-    start_url: "/day",
+    name: "PainTracker",
+    short_name: "PainTracker",
+    description: "고통 기록과 자기성찰로 성장하는 앱",
+    start_url: "/new-app",
     display: "standalone",
     background_color: "#121212",
     theme_color: "#121212",

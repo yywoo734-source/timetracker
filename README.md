@@ -65,3 +65,23 @@ Use Supabase **Direct connection** URL for `DATABASE_URL` (with `sslmode=require
 
 ### 5) First Login
 Sign up with the email you set in `SUPER_ADMIN_EMAIL` to become the initial super admin.
+
+## New App Prisma (separate schema)
+
+Use these commands for the new app schema only (`prisma/schema.new-app.prisma`):
+
+```bash
+# 1) Generate client for the new app
+npm run prisma:new:generate
+
+# 2) Create/apply local migration (development)
+npm run prisma:new:migrate:dev -- --name init_new_app
+
+# 3) Deploy migrations (production/CI)
+npm run prisma:new:migrate:deploy
+
+# Optional: inspect tables with Prisma Studio
+npm run prisma:new:studio
+```
+
+If your database is already in use, create migration in a safe environment first and review SQL before deploy.

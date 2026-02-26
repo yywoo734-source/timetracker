@@ -1,12 +1,16 @@
 {
-  "name": "timetracker",
+  "name": "paintracker",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prisma:new:generate": "prisma generate --schema prisma/schema.new-app.prisma",
+    "prisma:new:migrate:dev": "prisma migrate dev --schema prisma/schema.new-app.prisma",
+    "prisma:new:migrate:deploy": "prisma migrate deploy --schema prisma/schema.new-app.prisma",
+    "prisma:new:studio": "prisma studio --schema prisma/schema.new-app.prisma"
   },
   "dependencies": {
     "@prisma/client": "^7.3.0",

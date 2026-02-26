@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma-new-app"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ActionPlanStatus {
+  PENDING
+  DONE
+  SKIPPED
+}
+
+enum CheckinResult {
+  DONE
+  PARTIAL
+  MISSED
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String         @id @db.Uuid
+  email     String         @unique
+  name      String?
+  role      Role           @default(STUDENT)
+  status    ApprovalStatus @default(PENDING)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  painLogs      PainLog[]
+  weeklyReviews WeeklyReview[]
+
+  @@index([createdAt])
+  @@map("User")
+}
+
+model PainLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  occurredAt  DateTime @map("occurred_at")
+  intensity   Int
+  emotion     String
+  situation   String
+  triggerText String   @map("trigger_text")
+  bodySignal  String   @map("body_signal")
+  autoNote    String?  @map("auto_note")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reflection  Reflection?
+  actionPlans ActionPlan[]
+
+  @@index([userId, occurredAt(sort: Desc)])
+  @@map("pain_logs")
+}
+
+model Reflection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  painLogId         String   @unique @map("pain_log_id") @db.Uuid
+  thoughtRaw        String   @map("thought_raw")
+  factCheck         String   @map("fact_check")
+  controllableFocus String   @map("controllable_focus")
+  reframe           String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  painLog PainLog @relation(fields: [painLogId], references: [id], onDelete: Cascade)
+
+  @@map("reflections")
+}
+
+model ActionPlan {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  painLogId  String           @map("pain_log_id") @db.Uuid
+  title      String
+  ifThenPlan String           @map("if_then_plan")
+  dueDate    DateTime?        @map("due_date") @db.Date
+  status     ActionPlanStatus @default(PENDING)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  painLog   PainLog         @relation(fields: [painLogId], references: [id], onDelete: Cascade)
+  checkins  ActionCheckin[]
+
+  @@index([painLogId, status])
+  @@map("action_plans")
+}
+
+model ActionCheckin {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actionPlanId String       @map("action_plan_id") @db.Uuid
+  checkedAt    DateTime     @default(now()) @map("checked_at")
+  result       CheckinResult
+  memo         String?
+
+  actionPlan ActionPlan @relation(fields: [actionPlanId], references: [id], onDelete: Cascade)
+
+  @@index([actionPlanId, checkedAt(sort: Desc)])
+  @@map("action_checkins")
+}
+
+model WeeklyReview {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  weekStart         DateTime @map("week_start") @db.Date
+  topTriggers       Json     @map("top_triggers")
+  avgIntensity      Decimal  @map("avg_intensity") @db.Decimal(4, 2)
+  actionSuccessRate Decimal  @map("action_success_rate") @db.Decimal(5, 2)
+  summary           String
+  nextFocus         String   @map("next_focus")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([userId, weekStart])
+  @@map("weekly_reviews")
+}

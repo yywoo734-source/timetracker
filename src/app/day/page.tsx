@@ -362,6 +362,7 @@ export default function DayPage() {
   const [autoTrackNowMs, setAutoTrackNowMs] = useState<number>(Date.now());
   const autoTrackHydratedKeyRef = useRef<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [leftMenuOpen, setLeftMenuOpen] = useState(false);
   // ✅ Undo용 히스토리
   const [history, setHistory] = useState<Block[][]>([]);
   const [future, setFuture] = useState<Block[][]>([]);
@@ -727,6 +728,13 @@ export default function DayPage() {
     localStorage.setItem(THEME_KEY, themeMode);
     document.documentElement.style.colorScheme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    document.body.style.overflow = leftMenuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [leftMenuOpen]);
 
   useEffect(() => {
     // Theme switch during interaction can leave transient selection paint artifacts.
@@ -1780,6 +1788,84 @@ function fmtMin(min: number) {
         minHeight: "100dvh",
       }}
     >
+      <button
+        onClick={() => setLeftMenuOpen(true)}
+        style={{
+          position: "fixed",
+          top: 16,
+          left: 16,
+          zIndex: 70,
+          width: 42,
+          height: 42,
+          borderRadius: 999,
+          border: `1px solid ${theme.border}`,
+          background: theme.controlBg,
+          color: theme.controlText,
+          cursor: "pointer",
+          boxShadow: theme.buttonShadow,
+          fontSize: 20,
+          lineHeight: 1,
+        }}
+        aria-label="메뉴 열기"
+      >
+        ≡
+      </button>
+      {leftMenuOpen && (
+        <div
+          onClick={() => setLeftMenuOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            zIndex: 75,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: 280,
+              maxWidth: "82vw",
+              height: "100%",
+              background: theme.card,
+              borderRight: `1px solid ${theme.border}`,
+              padding: 14,
+              display: "grid",
+              alignContent: "start",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>메뉴</strong>
+              <button
+                onClick={() => setLeftMenuOpen(false)}
+                style={{
+                  border: `1px solid ${theme.border}`,
+                  background: theme.controlBg,
+                  color: theme.controlText,
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                닫기
+              </button>
+            </div>
+            <button onClick={() => { setLeftMenuOpen(false); router.push("/setup"); }}>설정</button>
+            <button onClick={() => { setLeftMenuOpen(false); router.push("/planning"); }}>플래닝</button>
+            <button onClick={() => { setLeftMenuOpen(false); router.push("/weekly"); }}>주간 리포트</button>
+            {showAdminLinks && (
+              <>
+                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin"); }}>관리자 승인/할당</button>
+                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin/records"); }}>학생 기록 보기</button>
+                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin/weekly"); }}>학생 주간 리포트</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div
         style={{
           display: "flex",
@@ -1884,85 +1970,6 @@ function fmtMin(min: number) {
             마지막 동기화: {lastSyncedAt ? fmtSyncTime(lastSyncedAt) : "없음"}
           </div>
         </div>
-        <button
-          onClick={() => router.push("/setup")}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: `1px solid ${theme.border}`,
-            background: theme.controlBg,
-            color: theme.controlText,
-            cursor: "pointer",
-            fontSize: 13,
-            boxShadow: theme.buttonShadow,
-          }}
-        >
-          설정
-        </button>
-        <button
-          onClick={() => router.push("/weekly")}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: `1px solid ${theme.border}`,
-            background: theme.controlBg,
-            color: theme.controlText,
-            cursor: "pointer",
-            fontSize: 13,
-            boxShadow: theme.buttonShadow,
-          }}
-        >
-          주간 리포트
-        </button>
-        {showAdminLinks && (
-          <>
-            <button
-              onClick={() => router.push("/admin")}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${theme.border}`,
-                background: theme.controlActiveBg,
-                color: theme.controlActiveText,
-                cursor: "pointer",
-                fontSize: 13,
-                boxShadow: theme.buttonShadow,
-              }}
-            >
-              관리자 승인/할당
-            </button>
-            <button
-              onClick={() => router.push("/admin/records")}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${theme.border}`,
-                background: theme.controlBg,
-                color: theme.controlText,
-                cursor: "pointer",
-                fontSize: 13,
-                boxShadow: theme.buttonShadow,
-              }}
-            >
-              학생 기록 보기
-            </button>
-            <button
-              onClick={() => router.push("/admin/weekly")}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${theme.border}`,
-                background: theme.controlBg,
-                color: theme.controlText,
-                cursor: "pointer",
-                fontSize: 13,
-                boxShadow: theme.buttonShadow,
-              }}
-            >
-              학생 주간 리포트
-            </button>
-          </>
-        )}
       </div>
 
       <div
@@ -3192,7 +3199,14 @@ function fmtMin(min: number) {
                     );
                   })}
 
-                  <polyline points={points} fill="none" stroke={theme.text} strokeWidth={3} />
+                  <polyline
+                    points={points}
+                    fill="none"
+                    stroke={theme.text}
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
 
                   {values.map((v, i) => (
                     <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
@@ -3459,6 +3473,8 @@ function fmtMin(min: number) {
                             fill="none"
                             stroke={c.color}
                             strokeWidth={3}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           />
                         );
                       })}

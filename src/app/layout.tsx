@@ -14,14 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TimeTracker",
-  description: "학생 공부 시간 기록",
-  applicationName: "TimeTracker",
+  title: "PainTracker",
+  description: "고통 기록과 자기성찰로 성장하는 앱",
+  applicationName: "PainTracker",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "TimeTracker",
+    title: "PainTracker",
   },
   formatDetection: {
     telephone: false,
