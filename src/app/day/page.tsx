@@ -1792,80 +1792,142 @@ function fmtMin(min: number) {
         onClick={() => setLeftMenuOpen(true)}
         style={{
           position: "fixed",
-          top: 16,
-          left: 16,
+          top: 20,
+          left: -10,
           zIndex: 70,
-          width: 42,
-          height: 42,
-          borderRadius: 999,
-          border: `1px solid ${theme.border}`,
-          background: theme.controlBg,
+          width: 56,
+          height: 46,
+          borderRadius: "0 14px 14px 0",
+          border: `1px solid ${theme.borderSubtle}`,
+          borderLeft: "none",
+          background: themeMode === "dark" ? "linear-gradient(180deg,#1f1f1f,#171717)" : "linear-gradient(180deg,#ffffff,#f8fafc)",
           color: theme.controlText,
           cursor: "pointer",
-          boxShadow: theme.buttonShadow,
-          fontSize: 20,
+          boxShadow: themeMode === "dark" ? "0 8px 20px rgba(0,0,0,.35)" : "0 8px 20px rgba(15,23,42,.12)",
+          fontSize: 18,
           lineHeight: 1,
+          transition: "transform .18s ease",
         }}
         aria-label="메뉴 열기"
       >
         ≡
       </button>
-      {leftMenuOpen && (
+      <div
+        onClick={() => setLeftMenuOpen(false)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: themeMode === "dark" ? "rgba(0,0,0,0.46)" : "rgba(15,23,42,0.26)",
+          backdropFilter: "blur(1.5px)",
+          WebkitBackdropFilter: "blur(1.5px)",
+          zIndex: 75,
+          opacity: leftMenuOpen ? 1 : 0,
+          pointerEvents: leftMenuOpen ? "auto" : "none",
+          transition: "opacity .22s ease",
+        }}
+      >
         <div
-          onClick={() => setLeftMenuOpen(false)}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            zIndex: 75,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: 302,
+            maxWidth: "84vw",
+            height: "100%",
+            background:
+              themeMode === "dark"
+                ? "linear-gradient(180deg,rgba(26,26,26,.98),rgba(18,18,18,.98))"
+                : "linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.98))",
+            borderRight: `1px solid ${theme.border}`,
+            borderRadius: "0 20px 20px 0",
+            boxShadow:
+              themeMode === "dark"
+                ? "14px 0 40px rgba(0,0,0,.42)"
+                : "14px 0 36px rgba(15,23,42,.15)",
+            padding: 16,
+            display: "grid",
+            alignContent: "start",
+            gap: 10,
+            transform: leftMenuOpen ? "translateX(0)" : "translateX(-106%)",
+            transition: "transform .28s cubic-bezier(.2,.8,.2,1)",
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: 280,
-              maxWidth: "82vw",
-              height: "100%",
-              background: theme.card,
-              borderRight: `1px solid ${theme.border}`,
-              padding: 14,
-              display: "grid",
-              alignContent: "start",
-              gap: 10,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong>메뉴</strong>
-              <button
-                onClick={() => setLeftMenuOpen(false)}
-                style={{
-                  border: `1px solid ${theme.border}`,
-                  background: theme.controlBg,
-                  color: theme.controlText,
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  cursor: "pointer",
-                }}
-              >
-                닫기
-              </button>
-            </div>
-            <button onClick={() => { setLeftMenuOpen(false); router.push("/setup"); }}>설정</button>
-            <button onClick={() => { setLeftMenuOpen(false); router.push("/planning"); }}>플래닝</button>
-            <button onClick={() => { setLeftMenuOpen(false); router.push("/weekly"); }}>주간 리포트</button>
-            {showAdminLinks && (
-              <>
-                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin"); }}>관리자 승인/할당</button>
-                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin/records"); }}>학생 기록 보기</button>
-                <button onClick={() => { setLeftMenuOpen(false); router.push("/admin/weekly"); }}>학생 주간 리포트</button>
-              </>
-            )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+            <strong style={{ letterSpacing: ".01em" }}>Navigation</strong>
+            <button
+              onClick={() => setLeftMenuOpen(false)}
+              style={{
+                border: `1px solid ${theme.border}`,
+                background: theme.controlBg,
+                color: theme.controlText,
+                borderRadius: 8,
+                padding: "4px 8px",
+                cursor: "pointer",
+              }}
+            >
+              닫기
+            </button>
           </div>
+
+          {[
+            { label: "설정", path: "/setup" },
+            { label: "플래닝", path: "/planning" },
+            { label: "주간 리포트", path: "/weekly" },
+          ].map((item) => (
+            <button
+              key={item.path}
+              onClick={() => {
+                setLeftMenuOpen(false);
+                router.push(item.path);
+              }}
+              style={{
+                textAlign: "left",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: `1px solid ${theme.border}`,
+                background: theme.controlBg,
+                color: theme.controlText,
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+
+          {showAdminLinks && (
+            <>
+              <div style={{ marginTop: 8, marginBottom: 2, fontSize: 12, color: theme.muted }}>관리자</div>
+              {[
+                { label: "관리자 승인/할당", path: "/admin" },
+                { label: "학생 기록 보기", path: "/admin/records" },
+                { label: "학생 주간 리포트", path: "/admin/weekly" },
+              ].map((item) => (
+                <button
+                  key={item.path}
+                  onClick={() => {
+                    setLeftMenuOpen(false);
+                    router.push(item.path);
+                  }}
+                  style={{
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.controlBg,
+                    color: theme.controlText,
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
-      )}
+      </div>
       <div
         style={{
           display: "flex",
