@@ -15,6 +15,9 @@ type PlanItem = {
   durMin?: number;
   intensity?: number;
   color?: string;
+  repeatType?: "DAILY" | "WEEKLY";
+  repeatUntil?: string;
+  repeatGroupId?: string;
 };
 type EditState = {
   day: string;
@@ -25,6 +28,8 @@ type EditState = {
   intensity: number;
   categoryId: string;
   done: boolean;
+  repeatType: "NONE" | "DAILY" | "WEEKLY";
+  repeatUntil: string;
 };
 
 const CATEGORIES_KEY = "timetracker_categories_v1";
@@ -70,6 +75,9 @@ function isoDayKey03(date = new Date()) {
 function uuid() {
   return globalThis.crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}`;
 }
+function isIsoDay(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
 function fmtClock(min: number) {
   const safe = Math.max(0, Math.min(1439, Math.floor(min)));
   return `${pad2(Math.floor(safe / 60))}:${pad2(safe % 60)}`;
@@ -107,6 +115,16 @@ export default function PlanningPage() {
   const [dragPreview, setDragPreview] = useState<{ day: string; startMin: number; endMin: number } | null>(null);
   const dragStateRef = useRef<{ day: string; startMin: number } | null>(null);
   const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const premiumBtn: React.CSSProperties = {
+    border: "1px solid #c7d2fe",
+    background: "linear-gradient(180deg,#ffffff,#eef2ff)",
+    color: "#1e293b",
+    borderRadius: 10,
+    padding: "8px 12px",
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(99,102,241,.16)",
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -229,28 +247,71 @@ export default function PlanningPage() {
       intensity: item.intensity ?? 80,
       categoryId: matchedCategory?.id ?? "",
       done: !!item.done,
+      repeatType: item.repeatType ?? "NONE",
+      repeatUntil: item.repeatUntil ?? day,
     });
   }
 
   async function saveEdit() {
     if (!editState) return;
     const category = categories.find((c) => c.id === editState.categoryId) ?? activeCategory;
-    const next = (planningByDay[editState.day] ?? []).map((x) => {
+    const repeatGroupId = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId)?.repeatGroupId ?? uuid();
+    const baseItem = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId);
+    const updatedBase: PlanItem = {
+      ...(baseItem ?? { id: editState.itemId, text: editState.title, done: false }),
+      text: editState.title.trim() || baseItem?.text || "",
+      done: editState.done,
+      startMin: parseClockToMin(editState.startTime),
+      durMin: Math.max(5, Math.min(12 * 60, Math.round(editState.durMin))),
+      intensity: Math.max(0, Math.min(100, Math.round(editState.intensity))),
+      kind: category?.label ?? baseItem?.kind,
+      color: category?.color ?? baseItem?.color,
+      repeatType: editState.repeatType === "NONE" ? undefined : editState.repeatType,
+      repeatUntil:
+        editState.repeatType === "NONE" || !isIsoDay(editState.repeatUntil)
+          ? undefined
+          : editState.repeatUntil,
+      repeatGroupId: editState.repeatType === "NONE" ? undefined : repeatGroupId,
+    };
+
+    const nextMap: Record<string, PlanItem[]> = { ...planningByDay };
+    const nextCurrent = (nextMap[editState.day] ?? []).map((x) => {
       if (x.id !== editState.itemId) return x;
-      return {
-        ...x,
-        text: editState.title.trim() || x.text,
-        done: editState.done,
-        startMin: parseClockToMin(editState.startTime),
-        durMin: Math.max(5, Math.min(12 * 60, Math.round(editState.durMin))),
-        intensity: Math.max(0, Math.min(100, Math.round(editState.intensity))),
-        kind: category?.label ?? x.kind,
-        color: category?.color ?? x.color,
-      } satisfies PlanItem;
+      return updatedBase;
     });
-    setPlanningByDay((prev) => ({ ...prev, [editState.day]: next }));
+    nextMap[editState.day] = nextCurrent;
+
+    if (updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
+      const step = updatedBase.repeatType === "DAILY" ? 1 : 7;
+      let cursor = addDays(editState.day, step);
+      while (cursor <= updatedBase.repeatUntil) {
+        const dayItems = nextMap[cursor] ?? [];
+        const filtered = dayItems.filter((x) => x.repeatGroupId !== repeatGroupId);
+        filtered.push({
+          ...updatedBase,
+          id: uuid(),
+          done: false,
+          repeatGroupId,
+        });
+        nextMap[cursor] = filtered;
+        cursor = addDays(cursor, step);
+      }
+    }
+
+    setPlanningByDay(nextMap);
     setEditState(null);
-    await saveDay(editState.day, next);
+    const saveTargets = new Set<string>([editState.day]);
+    if (updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
+      const step = updatedBase.repeatType === "DAILY" ? 1 : 7;
+      let cursor = addDays(editState.day, step);
+      while (cursor <= updatedBase.repeatUntil) {
+        saveTargets.add(cursor);
+        cursor = addDays(cursor, step);
+      }
+    }
+    for (const day of saveTargets) {
+      await saveDay(day, nextMap[day] ?? []);
+    }
   }
 
   async function deleteEdit() {
@@ -329,13 +390,13 @@ export default function PlanningPage() {
       <div style={{ maxWidth: 1560, margin: "0 auto", display: "grid", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <h1 style={{ margin: 0, fontSize: 36 }}>{monthTitle}</h1>
-          <button onClick={() => setAnchorDay(addDays(anchorDay, viewMode === "week" ? -7 : -30))}>◀</button>
-          <button onClick={() => setAnchorDay(isoDayKey03())}>오늘</button>
-          <button onClick={() => setAnchorDay(addDays(anchorDay, viewMode === "week" ? 7 : 30))}>▶</button>
-          <button onClick={() => setViewMode("week")} style={{ fontWeight: viewMode === "week" ? 800 : 500 }}>주</button>
-          <button onClick={() => setViewMode("month")} style={{ fontWeight: viewMode === "month" ? 800 : 500 }}>월</button>
-          <button onClick={() => router.push("/day")}>타임트래커</button>
-          <button onClick={() => router.push("/weekly")}>리포트</button>
+          <button onClick={() => setAnchorDay(addDays(anchorDay, viewMode === "week" ? -7 : -30))} style={premiumBtn}>◀</button>
+          <button onClick={() => setAnchorDay(isoDayKey03())} style={premiumBtn}>오늘</button>
+          <button onClick={() => setAnchorDay(addDays(anchorDay, viewMode === "week" ? 7 : 30))} style={premiumBtn}>▶</button>
+          <button onClick={() => setViewMode("week")} style={{ ...premiumBtn, fontWeight: viewMode === "week" ? 900 : 700 }}>주</button>
+          <button onClick={() => setViewMode("month")} style={{ ...premiumBtn, fontWeight: viewMode === "month" ? 900 : 700 }}>월</button>
+          <button onClick={() => router.push("/day")} style={premiumBtn}>타임트래커</button>
+          <button onClick={() => router.push("/weekly")} style={premiumBtn}>리포트</button>
           <span style={{ marginLeft: "auto", color: syncing ? "#2563eb" : "#6b7280", fontSize: 13 }}>
             {syncing ? "Syncing..." : "Synced"}
           </span>
@@ -527,7 +588,7 @@ export default function PlanningPage() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <strong style={{ fontSize: 22 }}>이벤트</strong>
-              <button onClick={() => setEditState(null)}>닫기</button>
+              <button onClick={() => setEditState(null)} style={premiumBtn}>닫기</button>
             </div>
 
             <input
@@ -583,9 +644,36 @@ export default function PlanningPage() {
               완료 처리
             </label>
 
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select
+                value={editState.repeatType}
+                onChange={(e) =>
+                  setEditState((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          repeatType: e.target.value as "NONE" | "DAILY" | "WEEKLY",
+                          repeatUntil: prev.repeatUntil || prev.day,
+                        }
+                      : prev
+                  )
+                }
+              >
+                <option value="NONE">반복 안 함</option>
+                <option value="DAILY">매일 반복</option>
+                <option value="WEEKLY">매주 반복</option>
+              </select>
+              <input
+                type="date"
+                value={editState.repeatUntil}
+                disabled={editState.repeatType === "NONE"}
+                onChange={(e) => setEditState((prev) => (prev ? { ...prev, repeatUntil: e.target.value } : prev))}
+              />
+            </div>
+
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <button onClick={() => void deleteEdit()} style={{ color: "#b91c1c" }}>삭제</button>
-              <button onClick={() => void saveEdit()}>저장</button>
+              <button onClick={() => void deleteEdit()} style={{ ...premiumBtn, color: "#b91c1c", borderColor: "#fecaca" }}>삭제</button>
+              <button onClick={() => void saveEdit()} style={premiumBtn}>저장</button>
             </div>
           </div>
         </div>

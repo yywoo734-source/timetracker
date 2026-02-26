@@ -11,6 +11,9 @@ type PlannerItem = {
   durMin?: number;
   intensity?: number;
   color?: string;
+  repeatType?: string;
+  repeatUntil?: string;
+  repeatGroupId?: string;
 };
 
 function dayToDate(day: string) {
@@ -56,6 +59,15 @@ function sanitizeItems(value: unknown): PlannerItem[] {
 
     const colorRaw = String(item.color ?? "").trim();
     if (colorRaw) next.color = colorRaw.slice(0, 24);
+
+    const repeatTypeRaw = String(item.repeatType ?? "").trim().toUpperCase();
+    if (repeatTypeRaw === "DAILY" || repeatTypeRaw === "WEEKLY") next.repeatType = repeatTypeRaw;
+
+    const repeatUntilRaw = String(item.repeatUntil ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(repeatUntilRaw)) next.repeatUntil = repeatUntilRaw;
+
+    const repeatGroupIdRaw = String(item.repeatGroupId ?? "").trim();
+    if (repeatGroupIdRaw) next.repeatGroupId = repeatGroupIdRaw.slice(0, 80);
 
     out.push(next);
   }
