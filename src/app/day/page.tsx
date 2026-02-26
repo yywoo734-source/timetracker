@@ -286,34 +286,6 @@ function buildSlotGradient(segments: SlotSegment[], baseColor: string) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
-function smoothPathFromPoints(points: Array<{ x: number; y: number }>, tension = 1) {
-  if (points.length === 0) return "";
-  if (points.length === 1) {
-    const p = points[0];
-    return `M ${p.x} ${p.y}`;
-  }
-  if (points.length === 2) {
-    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-  }
-
-  // Catmull-Rom -> cubic Bezier. The curve passes through all given points.
-  let d = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] ?? p2;
-
-    const cp1x = p1.x + ((p2.x - p0.x) * tension) / 6;
-    const cp1y = p1.y + ((p2.y - p0.y) * tension) / 6;
-    const cp2x = p2.x - ((p3.x - p1.x) * tension) / 6;
-    const cp2y = p2.y - ((p3.y - p1.y) * tension) / 6;
-
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-  }
-  return d;
-}
-
 type DayRecord = {
   blocks: Block[];
   notesByCategory: Record<string, string>;
@@ -3246,8 +3218,7 @@ function fmtMin(min: number) {
               const xAt = (i: number) => padL + i * xStep;
               const y = (v: number) => padT + innerH - (v / yMax) * innerH;
 
-              const linePoints = values.map((v, i) => ({ x: xAt(i), y: y(v) }));
-              const linePath = smoothPathFromPoints(linePoints);
+              const points = values.map((v, i) => `${xAt(i)},${y(v)}`).join(" ");
 
               const tooltip =
                 totalHoverIndex == null
@@ -3309,7 +3280,14 @@ function fmtMin(min: number) {
                     );
                   })}
 
-                  <path d={linePath} fill="none" stroke={theme.text} strokeWidth={2} strokeLinecap="round" />
+                  <polyline
+                    points={points}
+                    fill="none"
+                    stroke={theme.text}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
 
                   {values.map((v, i) => (
                     <circle key={i} cx={xAt(i)} cy={y(v)} r={4} fill={theme.text} />
@@ -3562,20 +3540,22 @@ function fmtMin(min: number) {
                     {categories
                       .filter((c) => !hiddenCategoryIds[c.id])
                       .map((c) => {
-                        const pts = days.map((d, i) => {
+                        const pts = days
+                          .map((d, i) => {
                           const v = d.totals[c.id] ?? 0;
-                          return { x: xAt(i), y: y(v) };
-                        });
-                        const path = smoothPathFromPoints(pts);
+                          return `${xAt(i)},${y(v)}`;
+                        })
+                          .join(" ");
 
                         return (
-                          <path
+                          <polyline
                             key={c.id}
-                            d={path}
+                            points={pts}
                             fill="none"
                             stroke={c.color}
                             strokeWidth={2}
                             strokeLinecap="round"
+                            strokeLinejoin="round"
                           />
                         );
                       })}
