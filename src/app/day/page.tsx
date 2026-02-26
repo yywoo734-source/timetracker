@@ -1244,21 +1244,44 @@ function fmtMin(min: number) {
     [studyIncludedCategoryIds]
   );
 
+  const getTotalsForDay = useCallback(
+    (targetDay: string) => {
+      const totals: Record<string, number> = {};
+      const daySeconds = secondsByDay[targetDay] ?? {};
+      for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
+
+      const blocks = targetDay === day ? actualBlocks : (recordsByDay[targetDay]?.blocks ?? []);
+      for (const b of blocks) {
+        totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
+      }
+
+      if (targetDay === autoTrackDay && autoTrackCategoryId) {
+        totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
+      }
+
+      return totals;
+    },
+    [
+      categories,
+      secondsByDay,
+      day,
+      actualBlocks,
+      recordsByDay,
+      autoTrackDay,
+      autoTrackCategoryId,
+      runningElapsedSec,
+    ]
+  );
+
   // ✅ 요약(카테고리별)
   const summary = useMemo(() => {
-    const totals: Record<string, number> = {};
-    const daySeconds = secondsByDay[day] ?? {};
-    for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
-    for (const b of actualBlocks) totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
-    if (autoTrackCategoryId && autoTrackDay === day) {
-      totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
-    }
+    const totals = getTotalsForDay(day);
     const totalMin = Object.entries(totals).reduce(
       (acc, [categoryId, min]) => (isStudyIncluded(categoryId) ? acc + min : acc),
       0
     );
     return { totals, totalMin };
-  }, [actualBlocks, categories, secondsByDay, day, autoTrackCategoryId, autoTrackDay, runningElapsedSec, isStudyIncluded]);
+  }, [getTotalsForDay, day, isStudyIncluded]);
 
   const todayMemoBoard = useMemo(() => {
     const categoryNotes = categories
@@ -1384,21 +1407,11 @@ function fmtMin(min: number) {
     const totalsByDay: Array<{ day: string; totals: Record<string, number>; totalMin: number }> = [];
 
     for (const d of trendDates) {
-      const blocks = d === day ? actualBlocks : (recordsByDay[d]?.blocks ?? []);
-      const daySeconds = secondsByDay[d] ?? {};
-      const totals: Record<string, number> = {};
-      for (const c of categories) totals[c.id] = (daySeconds[c.id] ?? 0) / 60;
-
-      for (const b of blocks) {
-        totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
-      }
-      if (d === autoTrackDay && autoTrackCategoryId) {
-        totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
-      }
+      const totals = getTotalsForDay(d);
 
       const totalMin = Object.entries(totals).reduce(
         (acc, [categoryId, min]) => (isStudyIncluded(categoryId) ? acc + min : acc),
-        0
+      0
       );
       totalsByDay.push({ day: d, totals, totalMin });
     }
@@ -1416,17 +1429,11 @@ function fmtMin(min: number) {
     return { totalsByDay, maxY };
   }, [
     trendDates,
-    day,
-    actualBlocks,
     categories,
-    recordsByDay,
-    secondsByDay,
-    autoTrackCategoryId,
-    runningElapsedSec,
-    autoTrackDay,
     hiddenCategoryIds,
     hiddenTotal,
     isStudyIncluded,
+    getTotalsForDay,
   ]);
 
   const investSummary = useMemo(() => {
@@ -1434,17 +1441,9 @@ function fmtMin(min: number) {
     for (const c of categories) totals[c.id] = 0;
 
     for (const d of investDates) {
-      const blocks = d === day ? actualBlocks : (recordsByDay[d]?.blocks ?? []);
-      const daySeconds = secondsByDay[d] ?? {};
-
+      const dayTotals = getTotalsForDay(d);
       for (const c of categories) {
-        totals[c.id] = (totals[c.id] ?? 0) + (daySeconds[c.id] ?? 0) / 60;
-      }
-      for (const b of blocks) {
-        totals[b.categoryId] = (totals[b.categoryId] ?? 0) + b.dur;
-      }
-      if (d === autoTrackDay && autoTrackCategoryId) {
-        totals[autoTrackCategoryId] = (totals[autoTrackCategoryId] ?? 0) + runningElapsedSec / 60;
+        totals[c.id] = (totals[c.id] ?? 0) + (dayTotals[c.id] ?? 0);
       }
     }
 
@@ -1459,7 +1458,33 @@ function fmtMin(min: number) {
       .sort((a, b) => b.min - a.min);
 
     return { totalMin, rows };
-  }, [categories, investDates, day, actualBlocks, recordsByDay, secondsByDay, autoTrackCategoryId, autoTrackDay, runningElapsedSec]);
+  }, [categories, investDates, getTotalsForDay]);
+
+  const weeklyActionSuggestion = useMemo(() => {
+    const thisWeekStart = mondayStart(day);
+    const prevWeekStart = addDays(thisWeekStart, -7);
+    const deltas: Array<{ categoryId: string; label: string; delta: number }> = [];
+
+    for (const c of categories) {
+      let thisWeekMin = 0;
+      let prevWeekMin = 0;
+      for (let i = 0; i < 7; i++) {
+        thisWeekMin += getTotalsForDay(addDays(thisWeekStart, i))[c.id] ?? 0;
+        prevWeekMin += getTotalsForDay(addDays(prevWeekStart, i))[c.id] ?? 0;
+      }
+      deltas.push({ categoryId: c.id, label: c.label, delta: thisWeekMin - prevWeekMin });
+    }
+
+    deltas.sort((a, b) => a.delta - b.delta);
+    const worst = deltas[0];
+    if (!worst || worst.delta >= 0) return null;
+    const recommendMin = Math.max(20, Math.min(60, Math.ceil(Math.abs(worst.delta) / 3 / 5) * 5));
+    return {
+      ...worst,
+      recommendMin,
+      text: `오늘의 제안: '${worst.label}'가 지난주 대비 ${fmtMin(Math.abs(worst.delta))} 감소 · 오늘 ${recommendMin}m 보충 추천`,
+    };
+  }, [categories, day, getTotalsForDay]);
 
   const theme = useMemo(
     () =>
@@ -1593,6 +1618,26 @@ function fmtMin(min: number) {
     autoTrackStartedAtMsRef.current = nowMs;
     setAutoTrackStartedAtMs(nowMs);
     setAutoTrackNowMs(nowMs);
+  }
+
+  function quickAddAtNow(categoryId: string, minDur: number) {
+    if (!isToday) {
+      alert("빠른 보정은 오늘 화면에서만 가능해요.");
+      return;
+    }
+    const now = getCurrentMin03();
+    const start = clamp(Math.floor(now / 5) * 5, 0, 1435);
+    const dur = Math.max(5, Math.round(minDur / 5) * 5);
+    pushHistory(structuredClone(actualBlocksRef.current));
+    setFuture([]);
+    setActiveCategoryId(categoryId);
+    setActualBlocks((prev) =>
+      applyBlock(prev, {
+        start,
+        dur: Math.min(dur, 1440 - start),
+        categoryId,
+      })
+    );
   }
 
   function removeBlockAt(min: number) {
@@ -2168,6 +2213,42 @@ function fmtMin(min: number) {
             </span>
           </button>
         ))}
+        {weeklyActionSuggestion && (
+          <div
+            style={{
+              width: "100%",
+              marginTop: 2,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: `1px solid ${themeMode === "dark" ? "#1d4ed8" : "#bfdbfe"}`,
+              background: themeMode === "dark" ? "rgba(30,64,175,.2)" : "#eff6ff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700 }}>{weeklyActionSuggestion.text}</div>
+            <button
+              onClick={() =>
+                quickAddAtNow(weeklyActionSuggestion.categoryId, weeklyActionSuggestion.recommendMin)
+              }
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: `1px solid ${themeMode === "dark" ? "#60a5fa" : "#93c5fd"}`,
+                background: themeMode === "dark" ? "#1d4ed8" : "#dbeafe",
+                color: themeMode === "dark" ? "#fff" : "#1e3a8a",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              {weeklyActionSuggestion.label} {weeklyActionSuggestion.recommendMin}m 추가
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 카테고리 버튼 */}
