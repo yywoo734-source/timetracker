@@ -29,26 +29,37 @@ function asObject(value: unknown) {
 
 function sanitizeItems(value: unknown): PlannerItem[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((x) => {
-      const item = asObject(x);
-      const id = String(item.id ?? "").trim();
-      const text = String(item.text ?? "").trim();
-      const done = Boolean(item.done);
-      if (!id || !text) return null;
-      const kindRaw = String(item.kind ?? "").trim();
-      const kind = kindRaw ? kindRaw.slice(0, 24) : undefined;
-      const startRaw = Number(item.startMin);
-      const durRaw = Number(item.durMin);
-      const intensityRaw = Number(item.intensity);
-      const colorRaw = String(item.color ?? "").trim();
-      const startMin = Number.isFinite(startRaw) ? Math.max(0, Math.min(1439, Math.round(startRaw))) : undefined;
-      const durMin = Number.isFinite(durRaw) ? Math.max(5, Math.min(12 * 60, Math.round(durRaw))) : undefined;
-      const intensity = Number.isFinite(intensityRaw) ? Math.max(0, Math.min(100, Math.round(intensityRaw))) : undefined;
-      const color = colorRaw ? colorRaw.slice(0, 24) : undefined;
-      return { id, text: text.slice(0, 120), done, kind, startMin, durMin, intensity, color };
-    })
-    .filter((x): x is PlannerItem => x !== null);
+  const out: PlannerItem[] = [];
+  for (const x of value) {
+    const item = asObject(x);
+    const id = String(item.id ?? "").trim();
+    const text = String(item.text ?? "").trim();
+    if (!id || !text) continue;
+
+    const next: PlannerItem = {
+      id,
+      text: text.slice(0, 120),
+      done: Boolean(item.done),
+    };
+
+    const kindRaw = String(item.kind ?? "").trim();
+    if (kindRaw) next.kind = kindRaw.slice(0, 24);
+
+    const startRaw = Number(item.startMin);
+    if (Number.isFinite(startRaw)) next.startMin = Math.max(0, Math.min(1439, Math.round(startRaw)));
+
+    const durRaw = Number(item.durMin);
+    if (Number.isFinite(durRaw)) next.durMin = Math.max(5, Math.min(12 * 60, Math.round(durRaw)));
+
+    const intensityRaw = Number(item.intensity);
+    if (Number.isFinite(intensityRaw)) next.intensity = Math.max(0, Math.min(100, Math.round(intensityRaw)));
+
+    const colorRaw = String(item.color ?? "").trim();
+    if (colorRaw) next.color = colorRaw.slice(0, 24);
+
+    out.push(next);
+  }
+  return out;
 }
 
 export async function GET(request: NextRequest) {
