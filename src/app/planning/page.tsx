@@ -285,8 +285,12 @@ export default function PlanningPage() {
   async function saveEdit() {
     if (!editState) return;
     const category = categories.find((c) => c.id === editState.categoryId) ?? activeCategory;
-    const repeatGroupId = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId)?.repeatGroupId ?? uuid();
     const baseItem = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId);
+    const isSeriesItem = Boolean(baseItem?.repeatGroupId);
+    const applyToFollowing = isSeriesItem
+      ? confirm("반복 일정입니다.\n확인: 이 일정부터 이후 모두 변경\n취소: 이 일정만 변경")
+      : false;
+    const repeatGroupId = baseItem?.repeatGroupId ?? uuid();
     const normalizedWeekdays =
       editState.repeatType === "CUSTOM"
         ? Array.from(new Set(editState.repeatWeekdays)).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
@@ -302,14 +306,14 @@ export default function PlanningPage() {
       intensity: Math.max(0, Math.min(100, Math.round(editState.intensity))),
       kind: category?.label ?? baseItem?.kind,
       color: category?.color ?? baseItem?.color,
-      repeatType: editState.repeatType === "NONE" ? undefined : editState.repeatType,
+      repeatType: editState.repeatType === "NONE" || !applyToFollowing ? undefined : editState.repeatType,
       repeatUntil:
-        editState.repeatType === "NONE" || !isIsoDay(editState.repeatUntil)
+        editState.repeatType === "NONE" || !isIsoDay(editState.repeatUntil) || !applyToFollowing
           ? undefined
           : editState.repeatUntil,
-      repeatGroupId: editState.repeatType === "NONE" ? undefined : repeatGroupId,
+      repeatGroupId: editState.repeatType === "NONE" || !applyToFollowing ? undefined : repeatGroupId,
       repeatWeekdays:
-        editState.repeatType === "CUSTOM"
+        editState.repeatType === "CUSTOM" && applyToFollowing
           ? safeWeekdays
           : undefined,
     };
@@ -321,13 +325,17 @@ export default function PlanningPage() {
     });
     nextMap[editState.day] = nextCurrent;
 
-    // 기존 같은 반복 그룹은 현재 메모리 범위에서 일단 정리
-    for (const [d, items] of Object.entries(nextMap)) {
-      nextMap[d] = items.filter((x) => x.id === editState.itemId || x.repeatGroupId !== repeatGroupId);
+    const saveTargets = new Set<string>([editState.day]);
+    if (applyToFollowing) {
+      // 같은 반복 그룹 중 "이 일정 이후"만 정리
+      for (const [d, items] of Object.entries(nextMap)) {
+        if (d < editState.day) continue;
+        nextMap[d] = items.filter((x) => x.id === editState.itemId || x.repeatGroupId !== repeatGroupId);
+        saveTargets.add(d);
+      }
     }
 
-    const saveTargets = new Set<string>([editState.day]);
-    if (updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
+    if (applyToFollowing && updatedBase.repeatType && updatedBase.repeatUntil && isIsoDay(updatedBase.repeatUntil)) {
       let cursor = addDays(editState.day, 1);
       while (cursor <= updatedBase.repeatUntil) {
         const shouldAdd =
@@ -360,10 +368,33 @@ export default function PlanningPage() {
 
   async function deleteEdit() {
     if (!editState) return;
-    const next = (planningByDay[editState.day] ?? []).filter((x) => x.id !== editState.itemId);
-    setPlanningByDay((prev) => ({ ...prev, [editState.day]: next }));
+    const baseItem = (planningByDay[editState.day] ?? []).find((x) => x.id === editState.itemId);
+    const repeatGroupId = baseItem?.repeatGroupId;
+    const deleteFollowing = repeatGroupId
+      ? confirm("반복 일정입니다.\n확인: 이 일정부터 이후 모두 삭제\n취소: 이 일정만 삭제")
+      : false;
+
+    if (!repeatGroupId || !deleteFollowing) {
+      const next = (planningByDay[editState.day] ?? []).filter((x) => x.id !== editState.itemId);
+      setPlanningByDay((prev) => ({ ...prev, [editState.day]: next }));
+      setEditState(null);
+      await saveDay(editState.day, next);
+      return;
+    }
+
+    const nextMap: Record<string, PlanItem[]> = { ...planningByDay };
+    const saveTargets = new Set<string>();
+    for (const [day, items] of Object.entries(nextMap)) {
+      if (day < editState.day) continue;
+      nextMap[day] = items.filter((x) => x.repeatGroupId !== repeatGroupId);
+      saveTargets.add(day);
+    }
+
+    setPlanningByDay(nextMap);
     setEditState(null);
-    await saveDay(editState.day, next);
+    for (const day of saveTargets) {
+      await saveDay(day, nextMap[day] ?? []);
+    }
   }
 
   function pxToMinute(day: string, clientY: number) {
